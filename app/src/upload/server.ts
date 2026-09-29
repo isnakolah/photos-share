@@ -7,7 +7,8 @@ import { getShareByKey, isKey } from '../immich'
 import { KeyType } from '../types'
 import { log } from '../utils/log'
 import { getByUploadIds } from '../attribution/db'
-import { adminKey } from './immichAdmin'
+import { adminKey, immichCall } from './immichAdmin'
+import { getSession, sessionRef, sidFromCookieHeader } from '../owner/session'
 import { enqueue, recoverPending, UploadMeta } from './processor'
 import {
   cleanFilename,
@@ -48,6 +49,45 @@ function reject (status: number, body: string): never {
   throw { status_code: status, body }
 }
 
+/**
+ * Owner uploads: a signed-in Immich user adding to one of their own albums.
+ * Authorised by the owner session cookie plus an album access check done with
+ * that user's own token.
+ */
+async function ownerUploadMeta (req: { headers: Headers }, upload: Upload): Promise<UploadMeta> {
+  const meta = upload.metadata || {}
+  const sid = sidFromCookieHeader(req.headers.get('cookie'))
+  const session = getSession(sid)
+  if (!sid || !session) reject(401, 'Please sign in again')
+  const albumId = String(meta.albumId || '')
+  if (!/^[0-9a-f-]{36}$/.test(albumId)) reject(400, 'Unknown album')
+  const filename = cleanFilename(meta.filename)
+  const filetype = String(meta.filetype || '')
+  if (!isAllowedMedia(filename, filetype)) reject(415, 'Only photos and videos can be added')
+  if (upload.sizeIsDeferred) reject(400, 'File size is required')
+  let albumName = ''
+  try {
+    const album = await immichCall<{ albumName: string }>('GET', '/albums/' + albumId + '?withoutAssets=true', undefined, { bearer: session!.token })
+    albumName = album.albumName
+  } catch (e) {
+    reject(403, 'You can\'t add to this album')
+  }
+  return {
+    mode: 'owner',
+    ownerRef: sessionRef(sid as string),
+    shareKey: '',
+    shareSlug: '',
+    albumId,
+    albumName,
+    uploader: session!.name,
+    filename,
+    filetype,
+    lastModified: String(meta.lastModified || ''),
+    ip: clientIp(req.headers),
+    userAgent: (req.headers.get('user-agent') || '').slice(0, 300)
+  }
+}
+
 export function createTusServer (): Server {
   const directory = uploadDir()
   const datastore = new FileStore({
@@ -64,6 +104,7 @@ export function createTusServer (): Server {
     async onUploadCreate (req, upload: Upload) {
       if (!uploadsEnabled()) reject(503, 'Uploads are not configured on this server')
       const meta = upload.metadata || {}
+      if (meta.mode === 'owner') return { metadata: await ownerUploadMeta(req, upload) as unknown as Record<string, string> }
       const shareKey = String(meta.shareKey || '')
       if (!isKey(shareKey)) reject(404, 'Invalid share link')
 
@@ -85,6 +126,8 @@ export function createTusServer (): Server {
       // Everything below is server-decided; nothing the client sent for these
       // keys survives.
       const serverMeta: UploadMeta = {
+        mode: 'share',
+        ownerRef: '',
         shareKey,
         shareSlug: share.link?.slug || '',
         albumId: gate.albumId,

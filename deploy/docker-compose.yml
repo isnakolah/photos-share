@@ -94,5 +94,23 @@ services:
       immich-server:
         condition: service_healthy
 
+  lan-gateway:
+    container_name: photos-lan-gateway
+    build: ./lan-gateway
+    image: photos-lan-gateway:local
+    restart: always
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:?}
+    volumes:
+      - ./lan-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - lan-gateway-data:/data
+    ports:
+      # LAN only. Home DNS points photos.nomonlab.com here.
+      - '${LAN_IP:?}:443:443'
+      - '${LAN_IP:?}:80:80'
+    depends_on:
+      - share-proxy
+
 volumes:
   model-cache:
+  lan-gateway-data:

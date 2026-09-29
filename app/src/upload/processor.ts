@@ -1,9 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { invalidateShare } from '../immich'
+import { invalidateAllShares, invalidateShare } from '../immich'
+import { getSessionByRef } from '../owner/session'
 import { log } from '../utils/log'
 import { isProcessed, markDone, markError, recordPending } from '../attribution/db'
-import { addToAlbum, getAsset, setDescription, tagAsset, uploadAsset } from './immichAdmin'
+import { addToAlbum, getAsset, ImmichAuth, setDescription, tagAsset, uploadAsset } from './immichAdmin'
 import { fileDate } from './validate'
 
 /*
@@ -16,6 +17,10 @@ import { fileDate } from './validate'
 */
 
 export interface UploadMeta {
+  // 'share': guest via a share link. 'owner': signed-in album owner.
+  mode: 'share' | 'owner'
+  // Owner mode: hash of the owner's session id, to look up their token
+  ownerRef: string
   shareKey: string
   shareSlug: string
   albumId: string
@@ -92,19 +97,29 @@ async function run (job: Job): Promise<void> {
 
 export async function processJob (job: Job): Promise<void> {
   const { meta } = job
+  const owner = meta.mode === 'owner'
+  let auth: ImmichAuth | undefined
+  if (owner) {
+    const session = getSessionByRef(meta.ownerRef)
+    if (!session) throw new Error('Owner session expired before the upload was saved')
+    auth = { bearer: session.token }
+  }
   const result = await uploadAsset(job.filePath, {
     filename: meta.filename,
     mimeType: meta.filetype,
     fileCreatedAt: fileDate(meta.lastModified)
-  })
-  // Uploading with the API key doesn't touch any album; add it explicitly.
+  }, auth)
+  // Uploading doesn't touch any album; add it explicitly.
   // Already-in-album comes back as a per-id error, which is fine.
-  await addToAlbum(meta.albumId, [result.id])
+  await addToAlbum(meta.albumId, [result.id], auth)
 
   const duplicate = result.status === 'duplicate'
-  await attribute(result.id, meta.uploader, duplicate)
+  // The owner's own photos need no "Added by" stamp: Immich already knows
+  // they're theirs, and the gallery falls back to OWNER_NAME.
+  if (!owner) await attribute(result.id, meta.uploader, duplicate)
   markDone(job.uploadId, result.id, duplicate)
-  invalidateShare(meta.shareKey, meta.shareSlug)
+  if (owner) invalidateAllShares()
+  else invalidateShare(meta.shareKey, meta.shareSlug)
   log(`Upload ${meta.filename} from ${meta.uploader} -> asset ${result.id}${duplicate ? ' (duplicate)' : ''}`)
   removeFiles(job.filePath)
 }

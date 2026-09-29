@@ -34,6 +34,7 @@ import { Home } from './view/home'
 import { mountUploads } from './upload/server'
 import { startAdminServer } from './admin/server'
 import { openDb } from './attribution/db'
+import { ownerRouter } from './owner/routes'
 
 // Extend the Request type with a `password` property
 declare module 'express-serve-static-core' {
@@ -66,6 +67,8 @@ app.use('/share/static/vendor', express.static('node_modules/tus-js-client/dist'
 app.use(express.json())
 // For parsing the selective-download form POST (form-encoded body)
 app.use(express.urlencoded({ extended: false, limit: '1mb' }))
+// Owner area: sign in with Immich, manage albums, add photos
+app.use(ownerRouter())
 // Cache-busted, immutable static assets under a per-release version segment.
 app.use('/share/static/' + ASSET_VERSION, express.static('public', {
   immutable: inProduction,

@@ -1,0 +1,18 @@
+# LAN fast lane. At home, home DNS (AdGuard) answers photos.nomonlab.com with
+# this server's LAN address, so browsers on the Wi-Fi land here instead of on
+# Cloudflare: same URL, same app, no internet round trip.
+{
+	admin off
+}
+
+photos.nomonlab.com {
+	tls {
+		dns cloudflare {env.CF_DNS_API_TOKEN}
+		resolvers 1.1.1.1
+	}
+	reverse_proxy share-proxy:3000 {
+		# Stream upload progress and downloads without buffering
+		flush_interval -1
+		header_up X-Photos-Lane lan
+	}
+}

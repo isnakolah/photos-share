@@ -10,6 +10,8 @@ cd "$DEPLOY_DIR"
 # Keep the live compose file in step with the repo
 if [ -f "${GITHUB_WORKSPACE:-}/deploy/docker-compose.yml" ]; then
   cp "$GITHUB_WORKSPACE/deploy/docker-compose.yml" docker-compose.yml
+  mkdir -p lan-gateway
+  cp "$GITHUB_WORKSPACE"/deploy/lan-gateway/* lan-gateway/
 fi
 
 compose() {

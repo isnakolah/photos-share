@@ -248,6 +248,11 @@ export function invalidateShare (...keys: Array<string | null | undefined>): voi
   shareCache.deleteWhere(cacheKey => wanted.has(cacheKey.split(':')[1]))
 }
 
+/** Drop every cached share lookup (e.g. after an owner upload to some album). */
+export function invalidateAllShares (): void {
+  shareCache.deleteWhere(() => true)
+}
+
 /**
  * Underlying fetch for getShareByKey. Always hits Immich; the public
  * getShareByKey wraps this with the cache. Don't call this directly from

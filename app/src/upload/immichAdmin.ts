@@ -2,30 +2,44 @@ import fs from 'fs'
 import { apiUrl } from '../immich'
 
 /*
-  Calls made with the operator's Immich API key (IMMICH_API_KEY), never with a
-  visitor's share key. The key must belong to the album owner and needs:
+  Immich calls made on the server's behalf. By default they use the
+  operator's API key (IMMICH_API_KEY), never a visitor's share key. The key
+  must belong to the album owner and needs:
     asset.upload, asset.read, asset.update, asset.delete,
     album.read, albumAsset.create, sharedLink.read, tag.create, tag.asset
+
+  Owner-mode calls pass a signed-in user's access token instead (`auth`).
 */
+
+export type ImmichAuth = { apiKey: string } | { bearer: string }
 
 export function adminKey (): string | undefined {
   return process.env.IMMICH_API_KEY || undefined
 }
 
-async function call<T> (method: string, endpoint: string, body?: unknown): Promise<T> {
-  const key = adminKey()
+function authHeaders (auth?: ImmichAuth): Record<string, string> {
+  if (auth && 'bearer' in auth) return { Authorization: 'Bearer ' + auth.bearer }
+  const key = auth?.apiKey || adminKey()
   if (!key) throw new Error('IMMICH_API_KEY is not set')
+  return { 'x-api-key': key }
+}
+
+export async function immichCall<T> (method: string, endpoint: string, body?: unknown, auth?: ImmichAuth): Promise<T> {
   const res = await fetch(apiUrl() + endpoint, {
     method,
     headers: {
-      'x-api-key': key,
+      ...authHeaders(auth),
       Accept: 'application/json',
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
     },
     body: body !== undefined ? JSON.stringify(body) : undefined
   })
   const text = await res.text()
-  if (!res.ok) throw new Error(`Immich ${method} ${endpoint} -> ${res.status}: ${text.slice(0, 300)}`)
+  if (!res.ok) {
+    const err = new Error(`Immich ${method} ${endpoint} -> ${res.status}: ${text.slice(0, 300)}`) as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
   return (text ? JSON.parse(text) : undefined) as T
 }
 
@@ -42,9 +56,7 @@ export async function uploadAsset (filePath: string, opts: {
   filename: string
   mimeType: string
   fileCreatedAt: string
-}): Promise<UploadResult> {
-  const key = adminKey()
-  if (!key) throw new Error('IMMICH_API_KEY is not set')
+}, auth?: ImmichAuth): Promise<UploadResult> {
   const blob = await fs.openAsBlob(filePath, { type: opts.mimeType || 'application/octet-stream' })
   const form = new FormData()
   form.append('fileCreatedAt', opts.fileCreatedAt)
@@ -53,7 +65,7 @@ export async function uploadAsset (filePath: string, opts: {
   form.append('assetData', blob, opts.filename)
   const res = await fetch(apiUrl() + '/assets', {
     method: 'POST',
-    headers: { 'x-api-key': key, Accept: 'application/json' },
+    headers: { ...authHeaders(auth), Accept: 'application/json' },
     body: form
   })
   const text = await res.text()
@@ -63,26 +75,26 @@ export async function uploadAsset (filePath: string, opts: {
   return JSON.parse(text) as UploadResult
 }
 
-export function addToAlbum (albumId: string, assetIds: string[]) {
-  return call<Array<{ id: string, success: boolean, error?: string }>>('PUT', `/albums/${albumId}/assets`, { ids: assetIds })
+export function addToAlbum (albumId: string, assetIds: string[], auth?: ImmichAuth) {
+  return immichCall<Array<{ id: string, success: boolean, error?: string }>>('PUT', `/albums/${albumId}/assets`, { ids: assetIds }, auth)
 }
 
 export function getAsset (assetId: string) {
-  return call<{ id: string, exifInfo?: { description?: string | null } }>('GET', `/assets/${assetId}`)
+  return immichCall<{ id: string, exifInfo?: { description?: string | null } }>('GET', `/assets/${assetId}`)
 }
 
 export function setDescription (assetId: string, description: string) {
-  return call<unknown>('PUT', `/assets/${assetId}`, { description })
+  return immichCall<unknown>('PUT', `/assets/${assetId}`, { description })
 }
 
 export async function tagAsset (assetId: string, tagValue: string): Promise<void> {
-  const tags = await call<Array<{ id: string, value: string }>>('PUT', '/tags', { tags: [tagValue] })
+  const tags = await immichCall<Array<{ id: string, value: string }>>('PUT', '/tags', { tags: [tagValue] })
   const tag = tags.find(t => t.value === tagValue) || tags[tags.length - 1]
   if (!tag) throw new Error('Tag upsert returned nothing for ' + tagValue)
-  await call<unknown>('PUT', '/tags/assets', { tagIds: [tag.id], assetIds: [assetId] })
+  await immichCall<unknown>('PUT', '/tags/assets', { tagIds: [tag.id], assetIds: [assetId] })
 }
 
 /** Move assets to Immich's trash (recoverable from the Immich UI). */
 export function trashAssets (assetIds: string[]) {
-  return call<unknown>('DELETE', '/assets', { ids: assetIds, force: false })
+  return immichCall<unknown>('DELETE', '/assets', { ids: assetIds, force: false })
 }

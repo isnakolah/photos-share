@@ -82,6 +82,15 @@ export function openDb (file = process.env.UPLOAD_DB_PATH || '/data/uploads.db')
     CREATE INDEX IF NOT EXISTS uploads_asset ON uploads (asset_id);
     CREATE INDEX IF NOT EXISTS uploads_uploader ON uploads (uploader);
     CREATE INDEX IF NOT EXISTS uploads_album ON uploads (album_id);
+    CREATE TABLE IF NOT EXISTS owner_sessions (
+      sid_hash TEXT PRIMARY KEY,
+      immich_token TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      expires_at TEXT NOT NULL
+    );
   `)
   return db
 }

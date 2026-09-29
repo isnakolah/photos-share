@@ -869,3 +869,207 @@ dialog input[type=text] {
   color: #d33;
   opacity: 1;
 }
+
+/* ---------------------------------------------------------------------------
+   photos-share: owner area (/owner)
+   --------------------------------------------------------------------------- */
+
+body.owner {
+  min-height: 100vh;
+}
+
+.muted {
+  opacity: 0.6;
+}
+
+.form-error {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #d33 18%, transparent);
+  color: var(--color-fg);
+}
+
+.lane-lan {
+  color: #2e9d57;
+  font-weight: 600;
+}
+
+.owner-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.owner-login form,
+dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.owner-login form {
+  width: min(100%, 360px);
+}
+
+.owner-login h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.owner-login p {
+  margin: 0;
+  opacity: 0.7;
+}
+
+.owner-login label,
+dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.owner-login input,
+dialog input[type=text] {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--color-fg) 25%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 17px;
+}
+
+dialog label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+dialog label.check input {
+  width: 20px;
+  height: 20px;
+}
+
+.slug-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body.owner #header form {
+  margin: 0;
+}
+
+#albums {
+  padding: 0 var(--gutter) 120px;
+}
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.album-card {
+  overflow: hidden;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-fg) 5%, transparent);
+}
+
+.album-cover {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  background: var(--color-gray);
+}
+
+.album-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.album-body {
+  padding: 12px 14px 14px;
+}
+
+.album-body h2 {
+  margin: 0 0 2px;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.album-body p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.album-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.album-actions .btn-primary {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+.album-actions a.btn-link {
+  text-decoration: none;
+}
+
+.btn-primary:disabled,
+.btn-link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Folder picking isn't a thing on phones */
+@media (pointer: coarse) {
+  .folder-btn {
+    display: none;
+  }
+}
+
+.owner-empty {
+  margin: 48px 0;
+  padding: 40px 24px;
+  border: 2px dashed color-mix(in srgb, var(--color-fg) 20%, transparent);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.owner-empty .empty-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+#owner-share-dialog .qr {
+  margin: 0 auto;
+  padding: 12px;
+  width: 200px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+#owner-share-dialog .qr[hidden] {
+  display: none;
+}
+
+#owner-share-dialog .qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
