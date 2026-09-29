@@ -15,6 +15,9 @@ import type { GroupByDateMode } from '../shared/types'
 import { downloadFilename } from './filename'
 import { requiresOriginal } from './sizing'
 import { displayDimensions, metadataGroupActive, pickExif } from './exif'
+import QRCode from 'qrcode'
+import { uploadersForAlbum } from '../attribution/db'
+import { maxUploadBytes, uploadsEnabled } from '../upload/server'
 
 /**
  * Render a gallery page for a given SharedLink.
@@ -53,7 +56,27 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   const descriptionInSidebar = shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.description.sidebar', false)
   const sidebarHasContent = shareMetadataAllowed && (descriptionInSidebar || metadataGroupActive('exif') || metadataGroupActive('location'))
 
-  const items: GalleryItem[] = await Promise.all(share.assets.map(async (asset): Promise<GalleryItem> => {
+  // Who added what: guest uploads come from the upload log, everything else
+  // belongs to the host (OWNER_NAME).
+  const ownerName = (process.env.OWNER_NAME || '').trim()
+  let uploaderMap = new Map<string, string>()
+  try {
+    if (share.album?.id && uploadsEnabled()) uploaderMap = uploadersForAlbum(share.album.id)
+  } catch (e) {
+    // Attribution is best-effort; never let it break the gallery.
+  }
+  const uploadedBy = (asset: Asset) => uploaderMap.get(asset.id) || ownerName || undefined
+  const uploaderCounts = new Map<string, number>()
+  for (const asset of share.assets) {
+    const name = uploadedBy(asset)
+    if (name) uploaderCounts.set(name, (uploaderCounts.get(name) || 0) + 1)
+  }
+  const requestedBy = typeof res.req.query?.by === 'string' ? res.req.query.by : ''
+  const activeUploader = requestedBy && uploaderCounts.has(requestedBy) ? requestedBy : ''
+  // Never mutate share.assets in place here: it's the cached shared object.
+  const assets = activeUploader ? share.assets.filter(a => uploadedBy(a) === activeUploader) : share.assets
+
+  const items: GalleryItem[] = await Promise.all(assets.map(async (asset): Promise<GalleryItem> => {
     let videoData: string | undefined
     if (asset.type === AssetType.video) {
       const source: { src: string, type?: string } = { src: videoUrl(share.key, asset.id) }
@@ -94,6 +117,7 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
 
     return {
       id: asset.id,
+      uploadedBy: uploadedBy(asset),
       type: asset.type,
       previewUrl,
       fullUrl,
@@ -131,8 +155,17 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   const lightboxOptions: Record<string, unknown> = (rawLightboxOptions && typeof rawLightboxOptions === 'object' && !Array.isArray(rawLightboxOptions))
     ? rawLightboxOptions as Record<string, unknown>
     : {}
+  const uploadEnabled = uploadsEnabled() && !!share.allowUpload && !!share.album?.id
+  const shareUrl = toString(publicBaseUrl).replace(/\/+$/, '') +
+    (share.slug ? '/s/' + encodeURIComponent(share.slug) : '/share/' + share.key)
+  const qrSvg = await QRCode.toString(shareUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
   const props: GalleryProps = {
     items,
+    upload: uploadEnabled ? { shareKey: share.key, maxBytes: maxUploadBytes() } : undefined,
+    share: { url: shareUrl, qrSvg },
+    uploaders: [...uploaderCounts.entries()].map(([name, count]) => ({ name, count })),
+    activeUploader,
+    pagePath: res.req.path || '/share/' + share.key,
     title: title(share),
     description: getConfigOption('ipp.gallery.showDescription', false) ? description(share) : '',
     publicBaseUrl: toString(publicBaseUrl),
@@ -162,7 +195,8 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
 
   // HTML gallery page cache time
   const cacheTime = Math.max(0, getNumericConfigOption('ipp.gallery.cacheTime', 300))
-  res.header('Cache-Control', 'public, max-age=' + cacheTime)
+  // Upload-enabled albums change as friends add to them; always revalidate.
+  res.header('Cache-Control', uploadEnabled ? 'no-cache' : 'public, max-age=' + cacheTime)
   res.send(renderPage(h(Gallery, props)))
 }
 

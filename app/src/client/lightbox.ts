@@ -12,6 +12,7 @@ import type { GalleryItem } from '../shared/types.js'
 import {
   registerBackButton,
   registerCaption,
+  registerUploader,
   registerDownloadButton,
   registerFullscreenButton,
   registerMotionButton
@@ -242,6 +243,7 @@ export function initLightbox () {
   // No config gate: the server omits `motionUrl` when motion photos are off.
   registerMotionButton(state.lightbox)
   if (state.metadataConfig.descriptionInCaption) registerCaption(state.lightbox)
+  registerUploader(state.lightbox)
   if (state.metadataConfig.sidebarHasContent) registerSidebar(state.lightbox)
   // Lazy album items load their exif / description / filename on open; this
   // refreshes the UI elements above once detail arrives.

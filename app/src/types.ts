@@ -108,12 +108,15 @@ export interface TimelineBucketAssets {
 }
 
 export interface SharedLink {
+  id?: string;
   key: string;
   keyType: KeyType;
   type: string;
   description?: string;
   assets: Asset[];
   allowDownload?: boolean;
+  allowUpload?: boolean;
+  slug?: string | null;
   showMetadata?: boolean;
   password?: string;
   album?: {

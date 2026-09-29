@@ -31,6 +31,9 @@ import { ASSET_VERSION } from './version'
 import { h } from 'preact'
 import { renderPage } from './view/render'
 import { Home } from './view/home'
+import { mountUploads } from './upload/server'
+import { startAdminServer } from './admin/server'
+import { openDb } from './attribution/db'
 
 // Extend the Request type with a `password` property
 declare module 'express-serve-static-core' {
@@ -44,18 +47,26 @@ declare module 'express-serve-static-core' {
 loadConfig()
 
 const app = express()
+const inProduction = process.env.NODE_ENV === 'production'
 app.use(cookieSession({
   name: 'session',
   httpOnly: true,
   sameSite: 'lax',
   secret: crypto.randomBytes(32).toString('base64url')
 }))
+// Guest uploads (tus). Mounted before the body parsers so chunk streams reach
+// tus untouched.
+openDb()
+mountUploads(app)
+// Browser bundle for the tus upload client
+app.use('/share/static/vendor', express.static('node_modules/tus-js-client/dist', {
+  maxAge: inProduction ? '7d' : 0
+}))
 // For parsing the password unlock form and POSTed JSON payloads
 app.use(express.json())
 // For parsing the selective-download form POST (form-encoded body)
 app.use(express.urlencoded({ extended: false, limit: '1mb' }))
 // Cache-busted, immutable static assets under a per-release version segment.
-const inProduction = process.env.NODE_ENV === 'production'
 app.use('/share/static/' + ASSET_VERSION, express.static('public', {
   immutable: inProduction,
   maxAge: inProduction ? '365d' : 0,
@@ -373,3 +384,4 @@ const server = app.listen(port, () => {
   // tolerated (logs a warning and continues) - see enforceMinimumImmichVersion.
   enforceMinimumImmichVersion().catch(e => console.error('Immich version check failed:', e))
 })
+startAdminServer()

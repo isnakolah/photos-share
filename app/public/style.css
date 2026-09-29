@@ -564,3 +564,308 @@ html.ipp-sidebar-open .ipp-sidebar {
   opacity: 0.6;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+   photos-share: upload, share and attribution UI
+   --------------------------------------------------------------------------- */
+
+.header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  background-color: color-mix(in srgb, var(--color-fg) 10%, transparent);
+  outline: none;
+}
+
+.icon-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-bg);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary svg {
+  width: 22px;
+  height: 22px;
+}
+
+.btn-link {
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Floating, thumb-reachable upload button on phones */
+@media (max-width: 640px) {
+  #add-photos {
+    position: fixed;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 90;
+    min-height: 56px;
+    padding: 0 28px;
+    font-size: 17px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  }
+
+  body:has(#add-photos) #gallery {
+    padding-bottom: 96px;
+  }
+}
+
+body:has(#upload-panel:not([hidden])) #add-photos {
+  display: none;
+}
+
+#uploader-filter {
+  display: flex;
+  gap: 8px;
+  padding: 0 var(--gutter) 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#uploader-filter a {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-fg) 18%, transparent);
+  color: var(--color-fg);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+#uploader-filter a.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-bg);
+}
+
+#uploader-filter .count {
+  opacity: 0.6;
+  margin-left: 2px;
+}
+
+#empty-album {
+  margin: 48px var(--gutter);
+  padding: 40px 24px;
+  border: 2px dashed color-mix(in srgb, var(--color-fg) 20%, transparent);
+  border-radius: 16px;
+  text-align: center;
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+#empty-album .empty-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+dialog {
+  width: min(92vw, 380px);
+  padding: 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+dialog h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+dialog p {
+  margin: 0 0 16px;
+  opacity: 0.75;
+}
+
+dialog input[type=text] {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--color-fg) 25%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 17px; /* >=16px stops iOS zooming into the field */
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dialog-actions .btn-primary {
+  flex: 1 1 auto;
+}
+
+#share-dialog .qr {
+  margin: 0 auto 16px;
+  padding: 12px;
+  width: 220px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+#share-dialog .qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+#upload-panel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 95;
+  box-sizing: border-box;
+  width: min(96vw, 460px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+#upload-panel[hidden] {
+  display: none;
+}
+
+.upload-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#upload-title {
+  font-size: 17px;
+}
+
+.upload-who {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.upload-who .btn-link {
+  padding: 0;
+  font-size: 13px;
+}
+
+.upload-bar {
+  height: 6px;
+  margin: 12px 0 8px;
+  border-radius: 3px;
+  background: var(--color-gray);
+  overflow: hidden;
+}
+
+#upload-bar-fill {
+  width: 0;
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+#upload-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+#upload-list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+#upload-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-fg) 8%, transparent);
+}
+
+#upload-list .file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#upload-list .file-status {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+#upload-list li[data-state=done] .file-status {
+  color: #2e9d57;
+  opacity: 1;
+}
+
+#upload-list li[data-state=error] {
+  cursor: pointer;
+}
+
+#upload-list li[data-state=error] .file-status {
+  color: #d33;
+  opacity: 1;
+}

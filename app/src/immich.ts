@@ -198,7 +198,7 @@ export async function handleShareRequest (req: IncomingShareRequest, res: Respon
   if (req.mode === 'download' && canDownload(link)) {
     // Download all assets as a zip file
     await downloadAll(res, link)
-  } else if (link.assets.length === 1) {
+  } else if (link.assets.length === 1 && !link.allowUpload) {
     // This is an individual item (not a gallery)
     log('Serving link ' + req.key)
     const asset = link.assets[0]
@@ -237,6 +237,15 @@ export function getShareByKey (key: string, password?: string, keyType: KeyType 
   // A `{ valid: false }` result is a truthy object, so the default eviction
   // rule wouldn't drop it - key off `.valid` explicitly.
   return cachedPromise(shareCache, cacheKey, () => fetchShareByKey(key, password, keyType), (result) => !!result?.valid)
+}
+
+/**
+ * Drop every cached lookup for a share (by key and/or slug), so the next
+ * gallery view picks up newly uploaded assets instead of waiting out the TTL.
+ */
+export function invalidateShare (...keys: Array<string | null | undefined>): void {
+  const wanted = new Set(keys.filter(Boolean))
+  shareCache.deleteWhere(cacheKey => wanted.has(cacheKey.split(':')[1]))
 }
 
 /**

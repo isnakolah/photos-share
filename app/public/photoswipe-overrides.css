@@ -186,3 +186,23 @@ html.pswp-no-arrows .pswp__button--arrow {
 .pswp__caption[hidden] {
   display: none;
 }
+
+/* photos-share: "Added by <name>" chip */
+.pswp__uploader {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pswp__uploader[hidden] {
+  display: none;
+}

@@ -1,3 +1,31 @@
+# photos-share
+
+A fork of [Immich Public Proxy](https://github.com/alangrainger/immich-public-proxy) that lets friends **add** photos to a shared Immich album, not just view them.
+
+What it adds on top of upstream:
+
+- **Guest uploads**: an "Add your photos" button on album links that have *Allow upload* turned on in Immich. Uploads use tus with 50 MB chunks, so large videos get past Cloudflare Tunnel's 100 MB request limit and resume after dropped connections.
+- **Attribution**: guests enter their name once. Every photo is marked "Added by <name>" in Immich (description plus an `uploader/<name>` tag) and on the share page, which also has a filter by person.
+- **Upload log and admin page**: a SQLite log of who uploaded what, when, and from where. A LAN-only admin page can move everything one person uploaded to Immich's trash.
+- **Share sheet and QR code** on every album page.
+
+Deployment for nomonhomelab lives in [`deploy/`](deploy/): an Immich stack plus this proxy, published at `photos.nomonlab.com` via cf-dns. Pushes to `main` are tested on GitHub and deployed by a self-hosted runner.
+
+Upload-related environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `IMMICH_API_KEY` | Album owner's API key. Guest uploads stay off until this is set. |
+| `OWNER_NAME` | Name shown on photos you added yourself |
+| `UPLOAD_MAX_BYTES` | Per-file limit (default 10 GiB) |
+| `UPLOAD_TMP_DIR` / `UPLOAD_DB_PATH` | Chunk storage and SQLite log (default `/data/...`) |
+| `ADMIN_PORT` / `ADMIN_PASSWORD` | Admin page listener (default 3001, `0` disables) and its basic-auth password |
+| `IMMICH_PUBLIC_URL` | Base URL for "open in Immich" links on the admin page |
+
+Licensed AGPL-3.0 like upstream. This repository is the source for the running service.
+
+---
+
 # Immich Public Proxy
 
 <p align="center" width="100%">

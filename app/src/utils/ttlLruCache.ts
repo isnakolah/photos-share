@@ -65,4 +65,10 @@ export class TtlLruCache<V> {
   delete (key: string): void {
     this.entries.delete(key)
   }
+
+  deleteWhere (predicate: (key: string) => boolean): void {
+    for (const key of [...this.entries.keys()]) {
+      if (predicate(key)) this.entries.delete(key)
+    }
+  }
 }

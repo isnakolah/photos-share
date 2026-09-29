@@ -97,6 +97,31 @@ export function registerCaption (lightbox: LightboxInstance) {
 }
 
 /**
+ * Register the "Added by <name>" chip shown at the top of each slide.
+ * Hidden for items without an uploader.
+ */
+export function registerUploader (lightbox: LightboxInstance) {
+  lightbox.on('uiRegister', () => {
+    lightbox.pswp.ui.registerElement({
+      name: 'uploader',
+      order: 8,
+      isButton: false,
+      appendTo: 'root',
+      onInit: (el: HTMLElement, pswp: PswpInstance) => {
+        el.classList.add('pswp__uploader')
+        const render = () => {
+          const name = state.items[pswp.currIndex]?.uploadedBy || ''
+          el.textContent = name ? 'Added by ' + name : ''
+          el.hidden = !name
+        }
+        render()
+        pswp.on('change', render)
+      }
+    })
+  })
+}
+
+/**
  * Register the download button. Only called when the share allows downloads
  * AND the config enables the lightbox button.
  */

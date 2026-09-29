@@ -1,0 +1,97 @@
+# photos: Immich (private, LAN + Tailscale) + photos-share (public via cf-dns)
+#
+# Lives at /srv/deploy/photos on nomonhomelab. Start with:
+#   docker compose --env-file .env --env-file .image.env up -d
+#
+# Immich services follow the official v3 compose file:
+# https://github.com/immich-app/immich/releases/download/v3.2.4/docker-compose.yml
+
+name: photos
+
+services:
+  immich-server:
+    container_name: photos-immich-server
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:?}
+    volumes:
+      # Originals, thumbnails, encoded video and DB backups: on the Synology (NFS)
+      - ${UPLOAD_LOCATION:?}:/data
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    ports:
+      # LAN + Tailscale only: this host has no public address and the tunnel
+      # never points here.
+      - '2283:2283'
+    depends_on:
+      - redis
+      - database
+    restart: always
+    healthcheck:
+      disable: false
+
+  immich-machine-learning:
+    container_name: photos-immich-ml
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:?}
+    volumes:
+      - model-cache:/cache
+    env_file:
+      - .env
+    environment:
+      # Unload models after 5 idle minutes; RAM on this host is shared.
+      MACHINE_LEARNING_MODEL_TTL: '300'
+      MACHINE_LEARNING_WORKERS: '1'
+    mem_limit: 2g
+    restart: always
+    healthcheck:
+      disable: false
+
+  redis:
+    container_name: photos-immich-redis
+    image: docker.io/valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
+    healthcheck:
+      test: redis-cli ping | grep -q PONG || exit 1
+    restart: always
+
+  database:
+    container_name: photos-immich-postgres
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+      POSTGRES_USER: ${DB_USERNAME:?}
+      POSTGRES_DB: ${DB_DATABASE_NAME:?}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      # Local NVMe, never NFS
+      - ${DB_DATA_LOCATION:?}:/var/lib/postgresql/data
+    shm_size: 128mb
+    restart: always
+    healthcheck:
+      disable: false
+
+  share-proxy:
+    container_name: photos-share-proxy
+    image: ${PROXY_IMAGE:?PROXY_IMAGE is set by deploy.sh in .image.env}
+    restart: always
+    environment:
+      IMMICH_URL: http://immich-server:2283
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?}
+      IMMICH_PUBLIC_URL: ${IMMICH_PUBLIC_URL:-}
+      IMMICH_API_KEY: ${IMMICH_API_KEY:-}
+      OWNER_NAME: ${OWNER_NAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-10737418240}
+      UPLOAD_DB_PATH: /data/uploads.db
+      UPLOAD_TMP_DIR: /data/tus
+    volumes:
+      # SQLite upload log + in-flight chunks: local disk
+      - ${SHARE_DATA_LOCATION:?}:/data
+    ports:
+      # Public pages: only the cf-dns tunnel (on this host) connects here
+      - '127.0.0.1:3100:3000'
+      # Admin page: LAN + Tailscale, basic auth
+      - '3101:3001'
+    depends_on:
+      - immich-server
+
+volumes:
+  model-cache:

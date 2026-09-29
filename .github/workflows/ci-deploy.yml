@@ -1,0 +1,55 @@
+name: CI and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npx eslint src --ext .ts,.tsx
+      - run: npm run build
+      - run: npm test
+
+  # Builds the image on the homelab itself and swaps the running container.
+  # Only ever runs for pushes to main: never for pull requests.
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, photos]
+    environment: homelab
+    env:
+      DEPLOY_DIR: /srv/deploy/photos
+      IMAGE: photos-share:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg PACKAGE_VERSION=$(jq -r .version app/package.json) \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t "$IMAGE" .
+
+      - name: Deploy
+        run: ./deploy/deploy.sh "$IMAGE"

@@ -37,6 +37,8 @@ export interface GalleryExif {
 
 export interface GalleryItem {
   id: string
+  // Display name of whoever added this asset (guest uploader, or the host)
+  uploadedBy?: string
   type: 'IMAGE' | 'VIDEO'
   previewUrl: string
   fullUrl?: string
