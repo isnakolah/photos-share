@@ -91,7 +91,8 @@ services:
       # Admin page: LAN + Tailscale, basic auth
       - '3101:3001'
     depends_on:
-      - immich-server
+      immich-server:
+        condition: service_healthy
 
 volumes:
   model-cache:

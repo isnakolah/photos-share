@@ -7,6 +7,11 @@ IMAGE="${1:?usage: deploy.sh <image>}"
 DEPLOY_DIR="${DEPLOY_DIR:-/srv/deploy/photos}"
 cd "$DEPLOY_DIR"
 
+# Keep the live compose file in step with the repo
+if [ -f "${GITHUB_WORKSPACE:-}/deploy/docker-compose.yml" ]; then
+  cp "$GITHUB_WORKSPACE/deploy/docker-compose.yml" docker-compose.yml
+fi
+
 compose() {
   docker compose --env-file .env --env-file .image.env "$@"
 }
