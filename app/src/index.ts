@@ -290,6 +290,11 @@ app.get('/share/:type(photo|video)/:key/:id/:size?', decodeCookie, asyncHandler(
     ...resolved.asset,
     type: req.params.type === 'video' ? AssetType.video : resolved.asset.type
   }
+  // Unlocked password-protected shares must never land in a shared cache
+  // (Cloudflare): a cached copy would be served without the password.
+  if (req.password) {
+    res.set('Cache-Control', 'private, no-store')
+  }
 
   const request = {
     req,
