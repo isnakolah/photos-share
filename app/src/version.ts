@@ -18,5 +18,11 @@ function resolveVersion (): string {
 
 export const APP_VERSION = resolveVersion()
 
-/** URL-safe cache-busting segment for static asset paths. */
-export const ASSET_VERSION = encodeURIComponent(APP_VERSION)
+/**
+ * URL-safe cache-busting segment for static asset paths. Includes the git
+ * commit (GIT_SHA, baked in at Docker build time) so every deploy gets new
+ * URLs: static files are cached as immutable by browsers and by Cloudflare,
+ * and the package version alone doesn't change between our deploys.
+ */
+const GIT_SHA = (process.env.GIT_SHA || '').slice(0, 8)
+export const ASSET_VERSION = encodeURIComponent(APP_VERSION + (GIT_SHA ? '-' + GIT_SHA : ''))
