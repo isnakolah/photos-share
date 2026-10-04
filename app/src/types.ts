@@ -68,6 +68,8 @@ export interface Asset {
   // exif / originalFileName / description are fetched lazily when the asset is
   // opened in the lightbox (see the `/meta/` route + client/metadata.ts).
   needsDetail?: boolean;
+  // Immich user who owns (added) the asset, when known
+  ownerId?: string;
 }
 
 /**
@@ -105,6 +107,8 @@ export interface TimelineBucketAssets {
   localOffsetHours: number[];
   // Motion photo (Live Photo) clip id; null for ordinary assets.
   livePhotoVideoId: (string | null)[];
+  // Immich user who owns (added) each asset
+  ownerId?: string[];
 }
 
 export interface SharedLink {

@@ -28,13 +28,12 @@ import { toString } from './utils/text'
 import { decrypt, encrypt } from './encrypt'
 import { respondToInvalidRequest } from './invalidRequestHandler'
 import { ASSET_VERSION } from './version'
-import { h } from 'preact'
-import { renderPage } from './view/render'
-import { Home } from './view/home'
 import { mountUploads } from './upload/server'
 import { startAdminServer } from './admin/server'
 import { openDb } from './attribution/db'
-import { ownerRouter } from './owner/routes'
+import { accountRouter, gateViews, notFoundPage } from './account/routes'
+import { albumGate, loadAccount } from './account/access'
+import { blockBots } from './account/bots'
 
 // Extend the Request type with a `password` property
 declare module 'express-serve-static-core' {
@@ -49,6 +48,8 @@ loadConfig()
 
 const app = express()
 const inProduction = process.env.NODE_ENV === 'production'
+// No crawlers, no indexing, anywhere
+app.use(blockBots)
 app.use(cookieSession({
   name: 'session',
   httpOnly: true,
@@ -67,8 +68,11 @@ app.use('/share/static/vendor', express.static('node_modules/tus-js-client/dist'
 app.use(express.json())
 // For parsing the selective-download form POST (form-encoded body)
 app.use(express.urlencoded({ extended: false, limit: '1mb' }))
-// Owner area: sign in with Immich, manage albums, add photos
-app.use(ownerRouter())
+// Accounts: who is signed in, sign-in/sign-up pages, home, API
+app.use(loadAccount)
+app.use(accountRouter())
+// Every album page, photo, video, metadata and download needs a member
+app.use(albumGate(gateViews))
 // Cache-busted, immutable static assets under a per-release version segment.
 app.use('/share/static/' + ASSET_VERSION, express.static('public', {
   immutable: inProduction,
@@ -335,25 +339,13 @@ app.get('/:shareType(share|s)/meta/:key/:id', decodeCookie, asyncHandler(async (
 }))
 
 /*
- * [ROUTE] Home page
- *
- * It was requested here to have *something* on the home page:
- * https://github.com/alangrainger/immich-public-proxy/discussions/19
- *
- * If you don't want to see this, set showHomePage as false in your config.json:
- * https://github.com/alangrainger/immich-public-proxy?tab=readme-ov-file#immich-public-proxy-options
- */
-if (getConfigOption('ipp.showHomePage', true)) {
-  app.get(/^\/(|share)\/*$/, (_req, res) => {
-    addResponseHeaders(res)
-    res.send(renderPage(h(Home, {})))
-  })
-}
-
-/*
  * Send a 404 for all other routes
  */
 app.get('*', (req, res) => {
+  if ((req.headers.accept || '').includes('text/html')) {
+    notFoundPage(res)
+    return
+  }
   respondToInvalidRequest(res, 404, 'Invalid route ' + req.path)
 })
 

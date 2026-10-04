@@ -426,6 +426,7 @@ function timelineBucketToAssets (bucket: TimelineBucketAssets): Asset[] {
       localDateTime: localDateTimeFromOffset(fileCreatedAt, bucket.localOffsetHours?.[i]),
       thumbhash: bucket.thumbhash?.[i] || undefined,
       livePhotoVideoId: bucket.livePhotoVideoId?.[i] || undefined,
+      ownerId: bucket.ownerId?.[i] || undefined,
       width,
       height,
       needsDetail: true

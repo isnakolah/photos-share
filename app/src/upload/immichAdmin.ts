@@ -2,13 +2,12 @@ import fs from 'fs'
 import { apiUrl } from '../immich'
 
 /*
-  Immich calls made on the server's behalf. By default they use the
-  operator's API key (IMMICH_API_KEY), never a visitor's share key. The key
-  must belong to the album owner and needs:
-    asset.upload, asset.read, asset.update, asset.delete,
-    album.read, albumAsset.create, sharedLink.read, tag.create, tag.asset
+  Immich calls made on the server's behalf. By default they use the host's
+  API key (IMMICH_API_KEY). It belongs to the Immich admin who owns the albums
+  and needs: adminUser.create (sign-ups), albumUser.create (adding members),
+  albumAsset.delete (admin page), asset.delete, album.read, sharedLink.read.
 
-  Owner-mode calls pass a signed-in user's access token instead (`auth`).
+  Calls on behalf of a signed-in person pass their access token (`auth`).
 */
 
 export type ImmichAuth = { apiKey: string } | { bearer: string }
@@ -79,19 +78,9 @@ export function addToAlbum (albumId: string, assetIds: string[], auth?: ImmichAu
   return immichCall<Array<{ id: string, success: boolean, error?: string }>>('PUT', `/albums/${albumId}/assets`, { ids: assetIds }, auth)
 }
 
-export function getAsset (assetId: string) {
-  return immichCall<{ id: string, exifInfo?: { description?: string | null } }>('GET', `/assets/${assetId}`)
-}
-
-export function setDescription (assetId: string, description: string) {
-  return immichCall<unknown>('PUT', `/assets/${assetId}`, { description })
-}
-
-export async function tagAsset (assetId: string, tagValue: string): Promise<void> {
-  const tags = await immichCall<Array<{ id: string, value: string }>>('PUT', '/tags', { tags: [tagValue] })
-  const tag = tags.find(t => t.value === tagValue) || tags[tags.length - 1]
-  if (!tag) throw new Error('Tag upsert returned nothing for ' + tagValue)
-  await immichCall<unknown>('PUT', '/tags/assets', { tagIds: [tag.id], assetIds: [assetId] })
+/** Take assets out of an album (the files stay in their owners' libraries). */
+export function removeFromAlbum (albumId: string, assetIds: string[]) {
+  return immichCall<unknown>('DELETE', `/albums/${albumId}/assets`, { ids: assetIds })
 }
 
 /** Move assets to Immich's trash (recoverable from the Immich UI). */

@@ -3,29 +3,21 @@ import express from 'express'
 import { Server } from '@tus/server'
 import { FileStore } from '@tus/file-store'
 import type { Upload } from '@tus/utils'
-import { getShareByKey, isKey } from '../immich'
-import { KeyType } from '../types'
 import { log } from '../utils/log'
 import { getByUploadIds } from '../attribution/db'
-import { adminKey, immichCall } from './immichAdmin'
-import { getSession, sessionRef, sidFromCookieHeader } from '../owner/session'
+import { adminKey } from './immichAdmin'
+import { getSession, sessionRef, sidFromCookieHeader } from '../account/session'
+import { albumForUser, roleIn } from '../account/access'
 import { enqueue, recoverPending, UploadMeta } from './processor'
-import {
-  cleanFilename,
-  cleanUploaderName,
-  clientIp,
-  isAllowedMedia,
-  passwordFromCookie,
-  uploadGate
-} from './validate'
+import { cleanFilename, clientIp, isAllowedMedia } from './validate'
 
 /*
-  Guest uploads over the tus resumable-upload protocol.
+  Uploads over the tus resumable-upload protocol.
 
   Browsers send 50 MB chunks, which keeps every request under Cloudflare's
   100 MB body limit and lets flaky mobile connections resume where they left
-  off. Authorisation happens once, when the upload is created: the share must
-  exist, be unlocked (for password links), and have "allow upload" on.
+  off. Authorisation happens once, when the upload is created: a signed-in
+  account that owns or can edit the album.
 */
 
 export const UPLOAD_PATH = '/share/upload'
@@ -50,36 +42,31 @@ function reject (status: number, body: string): never {
 }
 
 /**
- * Owner uploads: a signed-in Immich user adding to one of their own albums.
- * Authorised by the owner session cookie plus an album access check done with
- * that user's own token.
+ * Member uploads: a signed-in account adding to an album they own or can
+ * edit. Authorised by the session cookie plus an album role check made with
+ * that person's own Immich token. Files are later uploaded with that token, so
+ * Immich records who added each one.
  */
-async function ownerUploadMeta (req: { headers: Headers }, upload: Upload): Promise<UploadMeta> {
+async function memberUploadMeta (req: { headers: Headers }, upload: Upload): Promise<UploadMeta> {
   const meta = upload.metadata || {}
   const sid = sidFromCookieHeader(req.headers.get('cookie'))
-  const session = getSession(sid)
-  if (!sid || !session) reject(401, 'Please sign in again')
+  const account = getSession(sid)
+  if (!sid || !account) reject(401, 'Please sign in again')
   const albumId = String(meta.albumId || '')
   if (!/^[0-9a-f-]{36}$/.test(albumId)) reject(400, 'Unknown album')
   const filename = cleanFilename(meta.filename)
   const filetype = String(meta.filetype || '')
   if (!isAllowedMedia(filename, filetype)) reject(415, 'Only photos and videos can be added')
   if (upload.sizeIsDeferred) reject(400, 'File size is required')
-  let albumName = ''
-  try {
-    const album = await immichCall<{ albumName: string }>('GET', '/albums/' + albumId + '?withoutAssets=true', undefined, { bearer: session!.token })
-    albumName = album.albumName
-  } catch (e) {
-    reject(403, 'You can\'t add to this album')
-  }
+  const album = await albumForUser(account!, albumId)
+  const role = roleIn(album, account!.userId)
+  if (role !== 'owner' && role !== 'editor') reject(403, 'You can view this album but not add to it')
   return {
-    mode: 'owner',
-    ownerRef: sessionRef(sid as string),
-    shareKey: '',
-    shareSlug: '',
+    mode: 'member',
+    accountRef: sessionRef(sid as string),
     albumId,
-    albumName,
-    uploader: session!.name,
+    albumName: album!.albumName,
+    uploader: account!.name,
     filename,
     filetype,
     lastModified: String(meta.lastModified || ''),
@@ -103,43 +90,8 @@ export function createTusServer (): Server {
 
     async onUploadCreate (req, upload: Upload) {
       if (!uploadsEnabled()) reject(503, 'Uploads are not configured on this server')
-      const meta = upload.metadata || {}
-      if (meta.mode === 'owner') return { metadata: await ownerUploadMeta(req, upload) as unknown as Record<string, string> }
-      const shareKey = String(meta.shareKey || '')
-      if (!isKey(shareKey)) reject(404, 'Invalid share link')
-
-      const uploader = cleanUploaderName(meta.uploader)
-      if (!uploader) reject(400, 'Please tell us your name first')
-
-      const filename = cleanFilename(meta.filename)
-      const filetype = String(meta.filetype || '')
-      if (!isAllowedMedia(filename, filetype)) reject(415, 'Only photos and videos can be added')
-      if (upload.sizeIsDeferred) reject(400, 'File size is required')
-
-      const password = passwordFromCookie(req.headers.get('cookie'), shareKey)
-      const share = await getShareByKey(shareKey, password, KeyType.key)
-      if (!share.valid) reject(404, 'Invalid share link')
-      if (share.passwordRequired) reject(401, 'This album is locked - reload and enter the password')
-      const gate = uploadGate(share.link)
-      if (!gate.ok) reject(gate.status, gate.reason)
-
-      // Everything below is server-decided; nothing the client sent for these
-      // keys survives.
-      const serverMeta: UploadMeta = {
-        mode: 'share',
-        ownerRef: '',
-        shareKey,
-        shareSlug: share.link?.slug || '',
-        albumId: gate.albumId,
-        albumName: gate.albumName,
-        uploader: uploader as string,
-        filename,
-        filetype,
-        lastModified: String(meta.lastModified || ''),
-        ip: clientIp(req.headers),
-        userAgent: (req.headers.get('user-agent') || '').slice(0, 300)
-      }
-      return { metadata: serverMeta as unknown as Record<string, string> }
+      // Everything stored is server-decided; nothing else the client sent survives.
+      return { metadata: await memberUploadMeta(req, upload) as unknown as Record<string, string> }
     },
 
     async onUploadFinish (_req, upload: Upload) {
@@ -170,7 +122,7 @@ export function createTusServer (): Server {
  */
 export function mountUploads (app: express.Express): void {
   if (!uploadsEnabled()) {
-    log('IMMICH_API_KEY not set - guest uploads are disabled')
+    log('IMMICH_API_KEY not set - uploads are disabled')
     return
   }
   const tus = createTusServer()
@@ -194,5 +146,5 @@ export function mountUploads (app: express.Express): void {
       }
     }))
   })
-  log('Guest uploads enabled (max ' + Math.round(maxUploadBytes() / 1024 ** 2) + ' MB per file, temp dir ' + uploadDir() + ')')
+  log('Uploads enabled (max ' + Math.round(maxUploadBytes() / 1024 ** 2) + ' MB per file, temp dir ' + uploadDir() + ')')
 }

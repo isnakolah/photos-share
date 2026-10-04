@@ -5,7 +5,7 @@ import {
 } from '../immich'
 import { Response } from 'express-serve-static-core'
 import { Asset, AssetType, ImageSize, SharedLink } from '../types'
-import { getConfigOption, getNumericConfigOption } from '../config/access'
+import { getConfigOption } from '../config/access'
 import { canDownload, expiryDate, title } from '../share'
 import { toString } from '../utils/text'
 import { h } from 'preact'
@@ -18,6 +18,8 @@ import { displayDimensions, metadataGroupActive, pickExif } from './exif'
 import QRCode from 'qrcode'
 import { uploadersForAlbum } from '../attribution/db'
 import { maxUploadBytes, uploadsEnabled } from '../upload/server'
+import { albumOwner, albumPeople } from '../account/access'
+import type { AlbumInfo, AlbumRole } from '../account/access'
 
 /**
  * Render a gallery page for a given SharedLink.
@@ -56,16 +58,22 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   const descriptionInSidebar = shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.description.sidebar', false)
   const sidebarHasContent = shareMetadataAllowed && (descriptionInSidebar || metadataGroupActive('exif') || metadataGroupActive('location'))
 
-  // Who added what: guest uploads come from the upload log, everything else
-  // belongs to the host (OWNER_NAME).
-  const ownerName = (process.env.OWNER_NAME || '').trim()
+  // Who added what. Immich records each asset's owner; map that to the album's
+  // people. The upload log covers anything the timeline didn't attribute.
+  const album = res.locals?.album as AlbumInfo | undefined
+  const role = res.locals?.role as AlbumRole | undefined
+  const account = res.req.account
+  const people = new Map<string, string>()
+  for (const u of albumPeople(album)) people.set(u.id, u.name)
+  const ownerName = albumOwner(album)?.name
   let uploaderMap = new Map<string, string>()
   try {
-    if (share.album?.id && uploadsEnabled()) uploaderMap = uploadersForAlbum(share.album.id)
+    if (share.album?.id) uploaderMap = uploadersForAlbum(share.album.id)
   } catch (e) {
     // Attribution is best-effort; never let it break the gallery.
   }
-  const uploadedBy = (asset: Asset) => uploaderMap.get(asset.id) || ownerName || undefined
+  const uploadedBy = (asset: Asset) =>
+    (asset.ownerId && people.get(asset.ownerId)) || uploaderMap.get(asset.id) || ownerName || undefined
   const uploaderCounts = new Map<string, number>()
   for (const asset of share.assets) {
     const name = uploadedBy(asset)
@@ -155,17 +163,37 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   const lightboxOptions: Record<string, unknown> = (rawLightboxOptions && typeof rawLightboxOptions === 'object' && !Array.isArray(rawLightboxOptions))
     ? rawLightboxOptions as Record<string, unknown>
     : {}
-  const uploadEnabled = uploadsEnabled() && !!share.allowUpload && !!share.album?.id
-  const shareUrl = toString(publicBaseUrl).replace(/\/+$/, '') +
-    (share.slug ? '/s/' + encodeURIComponent(share.slug) : '/share/' + share.key)
+  const canAdd = role === 'owner' || role === 'editor'
+  const uploadEnabled = uploadsEnabled() && canAdd
+  const linkPath = share.slug ? '/s/' + encodeURIComponent(share.slug) : '/share/' + share.key
+  const shareUrl = toString(publicBaseUrl).replace(/\/+$/, '') + linkPath
   const qrSvg = await QRCode.toString(shareUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
   const props: GalleryProps = {
     items,
-    upload: uploadEnabled ? { shareKey: share.key, maxBytes: maxUploadBytes() } : undefined,
-    share: { url: shareUrl, qrSvg },
+    upload: uploadEnabled && album
+      ? {
+          albumId: album.id,
+          maxBytes: maxUploadBytes(),
+          // Display only: the LAN gateway marks requests it forwards
+          lane: res.req.headers['x-photos-lane'] === 'lan' && !res.req.headers['cf-ray'] ? 'lan' : 'internet'
+        }
+      : undefined,
+    invite: {
+      url: shareUrl,
+      qrSvg,
+      canManage: role === 'owner',
+      albumId: album?.id || '',
+      slug: share.slug || '',
+      allowUpload: !!share.allowUpload,
+      allowDownload: share.allowDownload !== false
+    },
+    account,
+    ownerName: ownerName || '',
+    members: [...people.values()],
+    totalCount: share.assets.length,
     uploaders: [...uploaderCounts.entries()].map(([name, count]) => ({ name, count })),
     activeUploader,
-    pagePath: res.req.path || '/share/' + share.key,
+    pagePath: res.req.path || linkPath,
     title: title(share),
     description: getConfigOption('ipp.gallery.showDescription', false) ? description(share) : '',
     publicBaseUrl: toString(publicBaseUrl),
@@ -193,10 +221,9 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
     metaBase
   }
 
-  // HTML gallery page cache time
-  const cacheTime = Math.max(0, getNumericConfigOption('ipp.gallery.cacheTime', 300))
-  // Upload-enabled albums change as friends add to them; always revalidate.
-  res.header('Cache-Control', uploadEnabled ? 'no-cache' : 'public, max-age=' + cacheTime)
+  // Pages are per-person now (who's viewing, what they may do): never share
+  // them through a cache, and always revalidate.
+  res.header('Cache-Control', 'private, no-cache')
   res.send(renderPage(h(Gallery, props)))
 }
 

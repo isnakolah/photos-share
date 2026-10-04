@@ -187,18 +187,19 @@ html.pswp-no-arrows .pswp__button--arrow {
   display: none;
 }
 
-/* photos-share: "Added by <name>" chip */
+/* photos-share: "Added by <name>" sticker */
 .pswp__uploader {
   position: absolute;
-  top: 14px;
+  top: 16px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) rotate(-2deg);
   padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 13px;
-  line-height: 1.2;
+  border: 2px solid #241A4D;
+  border-radius: 10px;
+  background: #FFC93C;
+  box-shadow: 2px 2px 0 #241A4D;
+  color: #241A4D;
+  font: 800 13px/1.2 'Bricolage Grotesque', system-ui, sans-serif;
   white-space: nowrap;
   pointer-events: none;
 }

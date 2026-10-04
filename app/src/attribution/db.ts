@@ -82,6 +82,25 @@ export function openDb (file = process.env.UPLOAD_DB_PATH || '/data/uploads.db')
     CREATE INDEX IF NOT EXISTS uploads_asset ON uploads (asset_id);
     CREATE INDEX IF NOT EXISTS uploads_uploader ON uploads (uploader);
     CREATE INDEX IF NOT EXISTS uploads_album ON uploads (album_id);
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid_hash TEXT PRIMARY KEY,
+      immich_token TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      expires_at TEXT NOT NULL
+    );
+    -- Which share link (invite) leads to which album, so the home page can
+    -- link albums shared with a friend (they can't list the owner's links).
+    CREATE TABLE IF NOT EXISTS album_links (
+      album_id TEXT PRIMARY KEY,
+      share_key TEXT NOT NULL,
+      slug TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+    -- Legacy (pre-accounts) owner sessions; unused.
     CREATE TABLE IF NOT EXISTS owner_sessions (
       sid_hash TEXT PRIMARY KEY,
       immich_token TEXT NOT NULL,
@@ -199,6 +218,17 @@ export function deletableAssetsFor (uploader: string): string[] {
   `).all(uploader) as Array<{ asset_id: string }>).map(r => r.asset_id)
 }
 
+/** Same as deletableAssetsFor, grouped by album (for removing from albums). */
+export function removableByAlbum (uploader: string): Map<string, string[]> {
+  const rows = openDb().prepare(`
+    SELECT DISTINCT album_id, asset_id FROM uploads
+    WHERE uploader = ? AND status = 'done' AND duplicate = 0 AND deleted_at IS NULL AND asset_id IS NOT NULL
+  `).all(uploader) as Array<{ album_id: string, asset_id: string }>
+  const map = new Map<string, string[]>()
+  for (const r of rows) map.set(r.album_id, [...(map.get(r.album_id) || []), r.asset_id])
+  return map
+}
+
 export function markDeleted (assetIds: string[]): void {
   if (!assetIds.length) return
   const placeholders = assetIds.map(() => '?').join(',')
@@ -209,4 +239,21 @@ export function markDeleted (assetIds: string[]): void {
 export function isProcessed (uploadId: string): boolean {
   const r = openDb().prepare('SELECT status FROM uploads WHERE upload_id = ?').get(uploadId) as { status?: string } | undefined
   return r?.status === 'done'
+}
+
+export function rememberAlbumLink (albumId: string, shareKey: string, slug: string | null | undefined): void {
+  openDb().prepare(`
+    INSERT INTO album_links (album_id, share_key, slug) VALUES (?, ?, ?)
+    ON CONFLICT (album_id) DO UPDATE SET share_key = excluded.share_key, slug = excluded.slug,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).run(albumId, shareKey, slug || null)
+}
+
+export function albumLinks (albumIds: string[]): Map<string, { shareKey: string, slug: string | null }> {
+  const map = new Map<string, { shareKey: string, slug: string | null }>()
+  if (!albumIds.length) return map
+  const rows = openDb().prepare(`SELECT album_id, share_key, slug FROM album_links WHERE album_id IN (${albumIds.map(() => '?').join(',')})`)
+    .all(...albumIds) as Array<{ album_id: string, share_key: string, slug: string | null }>
+  for (const r of rows) map.set(r.album_id, { shareKey: r.share_key, slug: r.slug })
+  return map
 }

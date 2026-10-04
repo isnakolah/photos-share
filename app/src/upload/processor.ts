@@ -1,10 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import { invalidateAllShares, invalidateShare } from '../immich'
-import { getSessionByRef } from '../owner/session'
+import { invalidateAllShares } from '../immich'
+import { getSessionByRef } from '../account/session'
 import { log } from '../utils/log'
 import { isProcessed, markDone, markError, recordPending } from '../attribution/db'
-import { addToAlbum, getAsset, ImmichAuth, setDescription, tagAsset, uploadAsset } from './immichAdmin'
+import { addToAlbum, uploadAsset } from './immichAdmin'
 import { fileDate } from './validate'
 
 /*
@@ -17,12 +17,10 @@ import { fileDate } from './validate'
 */
 
 export interface UploadMeta {
-  // 'share': guest via a share link. 'owner': signed-in album owner.
-  mode: 'share' | 'owner'
-  // Owner mode: hash of the owner's session id, to look up their token
-  ownerRef: string
-  shareKey: string
-  shareSlug: string
+  // Always 'member': a signed-in account (uploads before accounts are gone)
+  mode: 'member'
+  // Hash of the uploader's session id, to look up their Immich token
+  accountRef: string
   albumId: string
   albumName: string
   uploader: string
@@ -51,7 +49,7 @@ export function enqueue (job: Job): void {
   recordPending({
     uploadId: job.uploadId,
     uploader: job.meta.uploader,
-    shareKey: job.meta.shareKey,
+    shareKey: '',
     albumId: job.meta.albumId,
     albumName: job.meta.albumName,
     filename: job.meta.filename,
@@ -97,13 +95,10 @@ async function run (job: Job): Promise<void> {
 
 export async function processJob (job: Job): Promise<void> {
   const { meta } = job
-  const owner = meta.mode === 'owner'
-  let auth: ImmichAuth | undefined
-  if (owner) {
-    const session = getSessionByRef(meta.ownerRef)
-    if (!session) throw new Error('Owner session expired before the upload was saved')
-    auth = { bearer: session.token }
-  }
+  const account = getSessionByRef(meta.accountRef)
+  if (!account) throw new Error('Signed out before the upload was saved')
+  const auth = { bearer: account.token }
+  // Uploaded with the person's own token, so Immich records them as the owner
   const result = await uploadAsset(job.filePath, {
     filename: meta.filename,
     mimeType: meta.filetype,
@@ -114,41 +109,10 @@ export async function processJob (job: Job): Promise<void> {
   await addToAlbum(meta.albumId, [result.id], auth)
 
   const duplicate = result.status === 'duplicate'
-  // The owner's own photos need no "Added by" stamp: Immich already knows
-  // they're theirs, and the gallery falls back to OWNER_NAME.
-  if (!owner) await attribute(result.id, meta.uploader, duplicate)
   markDone(job.uploadId, result.id, duplicate)
-  if (owner) invalidateAllShares()
-  else invalidateShare(meta.shareKey, meta.shareSlug)
+  invalidateAllShares()
   log(`Upload ${meta.filename} from ${meta.uploader} -> asset ${result.id}${duplicate ? ' (duplicate)' : ''}`)
   removeFiles(job.filePath)
-}
-
-/**
- * Stamp who added the asset into Immich itself: a description line and an
- * `uploader/<name>` tag. Failures here are logged but don't fail the upload;
- * the SQLite log still has the attribution.
- */
-async function attribute (assetId: string, uploader: string, duplicate: boolean): Promise<void> {
-  const line = 'Added by ' + uploader
-  try {
-    const asset = await getAsset(assetId)
-    const existing = (asset.exifInfo?.description || '').trim()
-    // A duplicate already has an owner story (possibly the host's own photo),
-    // so only fill in the description when it's empty.
-    if (!existing) {
-      await setDescription(assetId, line)
-    } else if (!duplicate && !existing.includes('Added by ')) {
-      await setDescription(assetId, existing + '\n\n' + line)
-    }
-  } catch (e) {
-    log.warn('Could not set description on ' + assetId + ': ' + e)
-  }
-  try {
-    await tagAsset(assetId, 'uploader/' + uploader)
-  } catch (e) {
-    log.warn('Could not tag ' + assetId + ': ' + e)
-  }
 }
 
 function removeFiles (filePath: string): void {

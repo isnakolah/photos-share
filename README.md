@@ -4,10 +4,12 @@ A fork of [Immich Public Proxy](https://github.com/alangrainger/immich-public-pr
 
 What it adds on top of upstream:
 
-- **Guest uploads**: an "Add your photos" button on album links that have *Allow upload* turned on in Immich. Uploads use tus with 50 MB chunks, so large videos get past Cloudflare Tunnel's 100 MB request limit and resume after dropped connections.
-- **Attribution**: guests enter their name once. Every photo is marked "Added by <name>" in Immich (description plus an `uploader/<name>` tag) and on the share page, which also has a filter by person.
-- **Upload log and admin page**: a SQLite log of who uploaded what, when, and from where. A LAN-only admin page can move everything one person uploaded to Immich's trash.
-- **Share sheet and QR code** on every album page.
+- **Accounts and invites**: a share link is an invite, not a key. Opening it signed out shows "Daniel invited you to <album>", where people create an account (a real Immich user) or sign in. Then they're added to the album. Every album page, photo, video and download needs a signed-in member.
+- **Adding photos**: members who can edit upload files or whole folders. Uploads use tus with 50 MB chunks (past Cloudflare Tunnel's 100 MB limit, resumable) and go into Immich under the uploader's own account, so ownership records who added what.
+- **Home page**: "Your albums" and "Shared with you"; the host can create albums and manage invite settings (who can add, download, short link, QR).
+- **No crawlers**: search and AI bots get 403, every response is noindex, and link previews show the album title but never a photo.
+- **Upload log and admin page** (LAN only): who added what, and removing someone's uploads from your albums.
+- A "party album" design: Bricolage Grotesque and Figtree, chunky outlined buttons, sticker labels, light and dark themes.
 
 Deployment for nomonhomelab lives in [`deploy/`](deploy/): an Immich stack plus this proxy, published at `photos.nomonlab.com` via cf-dns. Pushes to `main` are tested on GitHub and deployed by a self-hosted runner.
 
@@ -15,8 +17,9 @@ Upload-related environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `IMMICH_API_KEY` | Album owner's API key. Guest uploads stay off until this is set. |
-| `OWNER_NAME` | Name shown on photos you added yourself |
+| `IMMICH_API_KEY` | Host's API key (Immich admin): adminUser.create/read, albumUser.create, album.read, albumAsset.create/delete, sharedLink.read, asset.* |
+| `FRIEND_QUOTA_GB` | Optional storage quota for accounts created from invites |
+| `COOKIE_INSECURE` | `true` only for local http development |
 | `UPLOAD_MAX_BYTES` | Per-file limit (default 10 GiB) |
 | `UPLOAD_TMP_DIR` / `UPLOAD_DB_PATH` | Chunk storage and SQLite log (default `/data/...`) |
 | `ADMIN_PORT` / `ADMIN_PASSWORD` | Admin page listener (default 3001, `0` disables) and its basic-auth password |
