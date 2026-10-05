@@ -289,32 +289,113 @@ function setupSettings () {
 
 // ----- Momento (admins) -------------------------------------------------------------
 
-async function openInMomento (fresh: boolean) {
+// An album can seed any number of Momento projects; the photos are shared.
+const BOOK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19,2L14,6.5V17.5L19,13V2M6.5,5C4.55,5 2.45,5.4 1,6.5V21.16C1,21.41 1.25,21.66 1.5,21.66C1.6,21.66 1.65,21.59 1.75,21.59C3.1,20.94 5.05,20.5 6.5,20.5C8.45,20.5 10.55,20.9 12,22C13.35,21.15 15.8,20.5 17.5,20.5C19.15,20.5 20.85,20.81 22.25,21.56C22.35,21.61 22.4,21.59 22.5,21.59C22.75,21.59 23,21.34 23,21.09V6.5C22.4,6.05 21.75,5.75 21,5.5V19C19.9,18.65 18.7,18.5 17.5,18.5C15.8,18.5 13.35,19.15 12,20V6.5C10.55,5.4 8.45,5 6.5,5Z"/></svg>'
+interface MomentoProject { id: string, title: string, updatedAt: string, photoCount: number, coverUrl: string | null, url: string }
+
+async function openInMomento (opts: { draftId?: string, fresh?: boolean, title?: string }) {
   // Open the tab right away (inside the click) so pop-up blockers allow it,
-  // then point it at the design once Momento has it ready.
+  // then point it at the project once Momento has it ready.
   const tab = window.open('about:blank', '_blank')
   if (tab) {
     tab.document.title = 'Opening in Momento…'
     tab.document.body.style.cssText = 'font: 600 18px system-ui; display: grid; place-items: center; height: 100vh; margin: 0; color: #241A4D'
-    tab.document.body.textContent = 'Getting your album ready in Momento…'
+    tab.document.body.textContent = opts.fresh ? 'Setting up your new project in Momento…' : 'Opening your project in Momento…'
   }
-  toast(fresh ? 'Starting a fresh design…' : 'Opening in Momento…')
+  toast(opts.fresh ? 'Starting a new project…' : 'Opening in Momento…')
   try {
-    const r = await api<{ url: string, existed: boolean, imported: number }>('POST', `/albums/${albumId}/momento`, { fresh })
+    const r = await api<{ url: string, existed: boolean, imported: number }>('POST', `/albums/${albumId}/momento`, opts)
     if (tab) tab.location.href = r.url
     else location.href = r.url
     const button = $('momento-open')
     if (button) {
       button.dataset.hasDraft = '1'
       const label = button.querySelector('span')
-      if (label) label.textContent = 'Open in Momento'
+      if (label) label.textContent = 'Momento projects'
     }
     toast(r.existed
-      ? (r.imported ? `Opened your design with ${plural(r.imported, 'new photo', 'new photos')}` : 'Opened your design')
-      : `Created a design with ${plural(r.imported, 'photo', 'photos')}`)
+      ? (r.imported ? `Opened your project with ${plural(r.imported, 'new photo', 'new photos')}` : 'Opened your project')
+      : `Created a project with ${plural(r.imported, 'photo', 'photos')}`)
+    return true
   } catch (e) {
     tab?.close()
     toast((e as Error).message)
+    return false
+  }
+}
+
+function editedAgo (iso: string) {
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000
+  if (!Number.isFinite(seconds)) return ''
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const steps: Array<[number, Intl.RelativeTimeFormatUnit]> = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month'], [Infinity, 'year']]
+  let value = -seconds
+  for (const [size, unit] of steps) {
+    if (Math.abs(value) < size) return 'edited ' + rtf.format(Math.round(value), unit)
+    value /= size
+  }
+  return ''
+}
+
+function renderMomentoProjects (list: HTMLElement, projects: MomentoProject[], dialog: HTMLDialogElement) {
+  list.replaceChildren()
+  if (projects.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'muted'
+    empty.textContent = 'No projects yet. Start one below.'
+    list.append(empty)
+    return
+  }
+  for (const project of projects) {
+    const item = document.createElement('li')
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'momento-project'
+    let cover: HTMLElement
+    if (project.coverUrl) {
+      const img = document.createElement('img')
+      img.src = project.coverUrl
+      img.alt = ''
+      img.loading = 'lazy'
+      cover = img
+    } else {
+      // Static icon markup only; project data is always set as text
+      cover = document.createElement('span')
+      cover.innerHTML = BOOK_ICON
+    }
+    cover.classList.add('momento-cover')
+    const info = document.createElement('span')
+    info.className = 'momento-info'
+    const title = document.createElement('span')
+    title.className = 'momento-title'
+    title.textContent = project.title
+    const meta = document.createElement('span')
+    meta.className = 'momento-meta'
+    meta.textContent = [plural(project.photoCount, 'photo', 'photos'), editedAgo(project.updatedAt)].filter(Boolean).join(' · ')
+    info.append(title, meta)
+    const go = document.createElement('span')
+    go.className = 'momento-go'
+    go.textContent = 'Open →'
+    button.append(cover, info, go)
+    button.addEventListener('click', async () => {
+      button.disabled = true
+      if (await openInMomento({ draftId: project.id })) dialog.close()
+      button.disabled = false
+    })
+    item.append(button)
+    list.append(item)
+  }
+}
+
+async function loadMomentoProjects (dialog: HTMLDialogElement) {
+  const list = $('momento-projects')
+  if (!list) return
+  list.replaceChildren(Object.assign(document.createElement('li'), { className: 'muted', textContent: 'Loading…' }))
+  try {
+    const r = await api<{ projects: MomentoProject[] }>('GET', `/albums/${albumId}/momento/projects`)
+    renderMomentoProjects(list, r.projects, dialog)
+  } catch (e) {
+    list.replaceChildren(Object.assign(document.createElement('li'), { className: 'muted', textContent: (e as Error).message }))
   }
 }
 
@@ -323,13 +404,31 @@ function setupMomento () {
   const dialog = $<HTMLDialogElement>('momento-dialog')
   if (!button) return
   button.addEventListener('click', () => {
-    if (button.dataset.hasDraft === '1' && dialog) dialog.showModal()
-    else openInMomento(false)
+    // First design for this album: straight in. Otherwise pick or start a project.
+    if (button.dataset.hasDraft === '1' && dialog) {
+      dialog.showModal()
+      loadMomentoProjects(dialog)
+    } else {
+      openInMomento({ fresh: true })
+    }
   })
-  dialog?.querySelectorAll<HTMLButtonElement>('[data-momento-fresh]').forEach(b => b.addEventListener('click', () => {
-    dialog.close()
-    openInMomento(b.dataset.momentoFresh === '1')
-  }))
+  const create = $<HTMLButtonElement>('momento-new')
+  const name = $<HTMLInputElement>('momento-new-title')
+  create?.addEventListener('click', async () => {
+    create.disabled = true
+    const ok = await openInMomento({ fresh: true, title: name?.value.trim() || undefined })
+    create.disabled = false
+    if (ok) {
+      if (name) name.value = ''
+      dialog?.close()
+    }
+  })
+  name?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      create?.click()
+    }
+  })
 }
 
 setupDelete()

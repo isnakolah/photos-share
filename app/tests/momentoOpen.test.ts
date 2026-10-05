@@ -6,9 +6,9 @@ import { closeDb, momentoDraftFor, openDb } from '../src/attribution/db'
 import { createSession } from '../src/account/session'
 
 /*
-  "Open in Momento": admin-only, forwards the service key and owner email to
-  Momento's internal endpoint, remembers the design, and turns Momento
-  failures into a friendly error.
+  Momento projects: admin-only, forwards the service key and owner email to
+  Momento's internal endpoints (list, open, new), remembers the last project,
+  and turns Momento failures into a friendly error.
 */
 
 const realFetch = globalThis.fetch
@@ -43,6 +43,9 @@ describe('Open in Momento', () => {
       if (url.startsWith('http://momento-api:5110')) {
         momentoCalls.push({ headers: init.headers as Record<string, string>, body: JSON.parse(String(init.body)) })
         if (momentoStatus !== 200) return json({ error: 'nope' }, momentoStatus)
+        if (url.endsWith('/api/integrations/immich/projects')) {
+          return json([{ draftId: 'Xy7', title: 'Photo book', updatedAt: '2026-10-05T10:00:00Z', photoCount: 12, coverUrl: 'https://momento.example.com/blob/c.webp', workspaceUrl: 'https://momento.example.com/app/drafts/Xy7' }])
+        }
         return json({ draftId: 'Xy7', workspaceUrl: 'https://momento.example.com/app/drafts/Xy7', existed: false, imported: 12, skippedVideos: 1 })
       }
       if (url.startsWith('http://immich')) {
@@ -99,6 +102,34 @@ describe('Open in Momento', () => {
   it('passes "start a fresh design" through', async () => {
     await open(cookies.admin, { fresh: true })
     expect(momentoCalls.at(-1)!.body.fresh).toBe(true)
+  })
+
+  it('lists the projects started from the album', async () => {
+    const list = (cookie: string) => realFetch(`${base}/api/albums/${ALBUM}/momento/projects`, {
+      headers: { cookie, 'X-Requested-With': 'photos-share' }
+    })
+    expect((await list(cookies.friend)).status).toBe(403)
+
+    const res = await list(cookies.admin)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      projects: [{ id: 'Xy7', title: 'Photo book', updatedAt: '2026-10-05T10:00:00Z', photoCount: 12, coverUrl: 'https://momento.example.com/blob/c.webp', url: 'https://momento.example.com/app/drafts/Xy7' }]
+    })
+    const call = momentoCalls.at(-1)!
+    expect(call.headers['X-Momento-Service-Key']).toBe('service-secret')
+    expect(call.body).toEqual({ immichAlbumId: ALBUM, ownerEmail: 'daniel@example.com' })
+  })
+
+  it('opens a chosen project, or starts a named new one', async () => {
+    await open(cookies.admin, { draftId: 'Xy7' })
+    expect(momentoCalls.at(-1)!.body).toMatchObject({ draftId: 'Xy7', fresh: false })
+
+    await open(cookies.admin, { fresh: true, title: '  Wall poster  ' })
+    expect(momentoCalls.at(-1)!.body).toMatchObject({ fresh: true, title: 'Wall poster' })
+
+    // Junk ids are dropped rather than forwarded
+    await open(cookies.admin, { draftId: '../../x' })
+    expect(momentoCalls.at(-1)!.body.draftId).toBeUndefined()
   })
 
   it('turns Momento failures into a friendly error', async () => {

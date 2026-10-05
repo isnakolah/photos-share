@@ -125,8 +125,8 @@ export function Gallery (props: GalleryProps) {
             )}
             {props.momento && (
               <button id="momento-open" class="btn btn-ghost" type="button" data-has-draft={props.momento.hasDraft ? '1' : ''}
-                      title="Design a printable album from these photos in Momento">
-                {Icon.book}<span>{props.momento.hasDraft ? 'Open in Momento' : 'Design in Momento'}</span>
+                      title="Design printable albums from these photos in Momento">
+                {Icon.book}<span>{props.momento.hasDraft ? 'Momento projects' : 'Design in Momento'}</span>
               </button>
             )}
             {props.isOwner && (
@@ -236,13 +236,17 @@ export function Gallery (props: GalleryProps) {
           <dialog id="momento-dialog" aria-labelledby="momento-title">
             <form method="dialog">
               <div class="dialog-head">
-                <h2 id="momento-title">Open in Momento</h2>
+                <h2 id="momento-title">Momento projects</h2>
                 <button class="icon-btn" type="button" data-close aria-label="Close">{Icon.close}</button>
               </div>
-              <p class="dialog-sub">You already have a design for this album. New photos added here are brought in when you open it; your pages stay as they are.</p>
-              <div class="dialog-actions">
-                <button class="btn btn-primary" type="button" data-momento-fresh="0">Open my design</button>
-                <button class="btn btn-ghost" type="button" data-momento-fresh="1">Start a fresh design</button>
+              <p class="dialog-sub">Each project is its own design made from this album's photos. The photos are shared, never copied, and new ones are brought in when you open a project.</p>
+              <ul class="momento-projects" id="momento-projects" aria-live="polite"><li class="muted">Loading…</li></ul>
+              <div class="momento-new">
+                <label class="field">
+                  <span>New project</span>
+                  <input id="momento-new-title" type="text" maxlength={200} placeholder={albumTitle} aria-label="New project name"/>
+                </label>
+                <button class="btn btn-primary" type="button" id="momento-new">Start new project</button>
               </div>
             </form>
           </dialog>

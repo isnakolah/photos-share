@@ -7,7 +7,7 @@ import { AlbumCard, Home } from '../view/home'
 import { log } from '../utils/log'
 import { asyncHandler } from '../http'
 import { albumLinks, forgetAlbumLink, markDeleted, rememberAlbumLink, rememberMomentoDraft } from '../attribution/db'
-import { momentoConfigured, MomentoError, openMomentoDraft } from '../momento/client'
+import { listMomentoProjects, momentoConfigured, MomentoError, openMomentoDraft } from '../momento/client'
 import { immichCall, ImmichAuth } from '../upload/immichAdmin'
 import { clientIp } from '../upload/validate'
 import { KeyType, SharedLink } from '../types'
@@ -602,38 +602,64 @@ export function accountRouter (): express.Router {
 
   // ----- Momento (album designer) --------------------------------------------------
 
-  // Open this album as a Momento album design (admins only). Momento links to
-  // the photos in Immich instead of copying them; reopening returns the same
-  // design (pulling in new photos) unless a fresh one is asked for.
-  api.post('/albums/:id/momento', asyncHandler(async (req, res) => {
+  // An album is a collection of photos that can seed any number of Momento
+  // projects (admins only). Momento links to the photos in Immich instead of
+  // copying them, so every project shares the same stored photos.
+  const momentoAlbum = async (req: express.Request, res: express.Response) => {
     const account = req.account as Account
     if (!account.isAdmin) {
       res.status(403).json({ error: 'Only the host can open albums in Momento' })
-      return
+      return undefined
     }
     if (!momentoConfigured()) {
       res.status(503).json({ error: 'Momento isn\'t connected yet' })
-      return
+      return undefined
     }
     const albumId = req.params.id
-    const album = await albumForUser(account, albumId)
-    if (!UUID.test(albumId) || !album) {
+    const album = UUID.test(albumId) ? await albumForUser(account, albumId) : undefined
+    if (!album) {
       res.status(404).json({ error: 'Album not found' })
-      return
+      return undefined
     }
+    return { account, albumId, album, ownerEmail: process.env.MOMENTO_OWNER_EMAIL || account.email }
+  }
+
+  api.get('/albums/:id/momento/projects', asyncHandler(async (req, res) => {
+    const ctx = await momentoAlbum(req, res)
+    if (!ctx) return
+    try {
+      const projects = await listMomentoProjects({ albumId: ctx.albumId, ownerEmail: ctx.ownerEmail })
+      res.json({
+        projects: projects.map(p => ({
+          id: p.draftId, title: p.title, updatedAt: p.updatedAt, photoCount: p.photoCount, coverUrl: p.coverUrl, url: p.workspaceUrl
+        }))
+      })
+    } catch (e) {
+      res.status(502).json({ error: e instanceof MomentoError ? e.message : 'Couldn\'t load your Momento projects. Try again.' })
+    }
+  }))
+
+  // Open a project: { draftId } reopens that one (pulling in new photos),
+  // { fresh: true, title? } starts a new one, and neither reopens the latest.
+  api.post('/albums/:id/momento', asyncHandler(async (req, res) => {
+    const ctx = await momentoAlbum(req, res)
+    if (!ctx) return
+    const draftId = typeof req.body?.draftId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.body.draftId) ? req.body.draftId : undefined
+    const title = typeof req.body?.title === 'string' && req.body.title.trim() ? req.body.title.trim().slice(0, 200) : ctx.album.albumName
     try {
       const result = await openMomentoDraft({
-        albumId,
-        ownerEmail: process.env.MOMENTO_OWNER_EMAIL || account.email,
-        title: album.albumName,
-        fresh: req.body?.fresh === true
+        albumId: ctx.albumId,
+        ownerEmail: ctx.ownerEmail,
+        title,
+        fresh: req.body?.fresh === true,
+        draftId
       })
-      rememberMomentoDraft(albumId, result.draftId, result.workspaceUrl)
-      log(`${account.email} opened album ${albumId} in Momento (${result.existed ? 'existing' : 'new'} design, ${result.imported} photos)`)
+      rememberMomentoDraft(ctx.albumId, result.draftId, result.workspaceUrl)
+      log(`${ctx.account.email} opened album ${ctx.albumId} in Momento (${result.existed ? 'existing' : 'new'} project, ${result.imported} photos)`)
       res.json({ url: result.workspaceUrl, existed: result.existed, imported: result.imported, skippedVideos: result.skippedVideos })
     } catch (e) {
       const message = e instanceof MomentoError ? e.message : 'Momento couldn\'t open this album. Try again.'
-      res.status(502).json({ error: message })
+      res.status(e instanceof MomentoError && e.status === 404 ? 404 : 502).json({ error: message })
     }
   }))
 
