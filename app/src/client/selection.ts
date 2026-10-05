@@ -48,6 +48,8 @@ export function toggleSelection (id: string) {
 }
 
 function updateSelectionUI () {
+  // Let other modules (delete in manage.ts) react to selection changes
+  document.dispatchEvent(new CustomEvent('ipp:selection'))
   if (state.countEl) {
     state.countEl.textContent = state.selected.size + ' selected'
   }

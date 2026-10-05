@@ -257,3 +257,7 @@ export function albumLinks (albumIds: string[]): Map<string, { shareKey: string,
   for (const r of rows) map.set(r.album_id, { shareKey: r.share_key, slug: r.slug })
   return map
 }
+
+export function forgetAlbumLink (albumId: string): void {
+  openDb().prepare('DELETE FROM album_links WHERE album_id = ?').run(albumId)
+}

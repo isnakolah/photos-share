@@ -34,6 +34,7 @@ export interface GalleryProps {
   groupByDate: GroupByDateMode | false
   metaBase?: string
   // photos-share
+  albumId?: string
   account?: Account
   ownerName?: string
   members?: string[]
@@ -43,6 +44,9 @@ export interface GalleryProps {
   uploaders?: Array<{ name: string, count: number }>
   activeUploader?: string
   pagePath?: string
+  // Viewer can delete at least one photo here / owns the album
+  canDeleteAny?: boolean
+  isOwner?: boolean
 }
 
 const Icon = {
@@ -51,6 +55,9 @@ const Icon = {
   invite: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15,14C12.33,14 7,15.33 7,18V20H23V18C23,15.33 17.67,14 15,14M6,10V7H4V10H1V12H4V15H6V12H9V10M15,12A4,4 0 0,0 19,8A4,4 0 0,0 15,4A4,4 0 0,0 11,8A4,4 0 0,0 15,12Z"/></svg>,
   download: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"/></svg>,
   back: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z"/></svg>,
+  select: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/></svg>,
+  trash: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"/></svg>,
+  settings: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>,
   close: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>
 }
 
@@ -61,7 +68,8 @@ export function Gallery (props: GalleryProps) {
     lightboxConfig: props.lightboxConfig,
     metadataConfig: props.metadataConfig,
     groupByDate: props.groupByDate,
-    metaBase: props.metaBase
+    metaBase: props.metaBase,
+    albumId: props.albumId
   })
   const total = props.totalCount ?? props.items.length
   const members = props.members || []
@@ -104,10 +112,16 @@ export function Gallery (props: GalleryProps) {
             {props.invite && (
               <button id="share-open" class="btn btn-secondary" type="button">{Icon.invite}<span>Invite friends</span></button>
             )}
+            {(props.showDownloadZip || props.canDeleteAny) && total > 0 && (
+              <button id="select-start" class="btn btn-ghost" type="button">{Icon.select}<span>Select</span></button>
+            )}
             {props.showDownloadZip && total > 0 && (
               <a id="download-zip" class="btn btn-ghost" href={props.path + '/download'} title="Download every photo as one ZIP file">
                 {Icon.download}<span>Download all</span>
               </a>
+            )}
+            {props.isOwner && (
+              <button id="album-settings-open" class="btn btn-ghost btn-icon-only" type="button" aria-label="Album settings" title="Album settings">{Icon.settings}</button>
             )}
           </div>
 
@@ -138,14 +152,78 @@ export function Gallery (props: GalleryProps) {
         {/* Filled by the client virtualiser with just the tiles in view */}
         <div id="gallery"></div>
 
-        {props.showDownloadZip && (
+        {(props.showDownloadZip || props.canDeleteAny) && (
           <div id="select-toolbar" hidden>
-            <button id="select-cancel" class="toolbar-btn" type="button" aria-label="Exit selection mode">{Icon.close}</button>
+            <button id="select-cancel" class="toolbar-btn" type="button" aria-label="Stop selecting">{Icon.close}</button>
             <span id="select-count">0 selected</span>
             <button id="select-all" class="toolbar-btn-text" type="button">Select all</button>
-            <button id="select-download" class="toolbar-btn" type="button" aria-label="Download selected">{Icon.download}</button>
+            {props.showDownloadZip && (
+              <button id="select-download" class="toolbar-btn" type="button" aria-label="Download selected" title="Download">{Icon.download}</button>
+            )}
+            {props.canDeleteAny && (
+              <button id="select-delete" class="toolbar-btn toolbar-btn-danger" type="button" aria-label="Delete selected" title="Delete" disabled>{Icon.trash}</button>
+            )}
           </div>
         )}
+
+        {props.canDeleteAny && (
+          <dialog id="delete-dialog" aria-labelledby="delete-title">
+            <form method="dialog">
+              <h2 id="delete-title">Delete photos?</h2>
+              <ul class="delete-summary" id="delete-summary"></ul>
+              <p class="form-error" id="delete-error" hidden></p>
+              <div class="dialog-actions">
+                <button class="btn btn-danger" type="button" id="delete-confirm">Delete</button>
+                <button class="btn btn-ghost" type="button" data-close>Keep them</button>
+              </div>
+            </form>
+          </dialog>
+        )}
+
+        {props.isOwner && props.albumId && (
+          <dialog id="album-settings" aria-labelledby="album-settings-title" data-album={props.albumId}>
+            <form id="rename-form" method="dialog">
+              <div class="dialog-head">
+                <h2 id="album-settings-title">Album settings</h2>
+                <button class="icon-btn" type="button" data-close aria-label="Close">{Icon.close}</button>
+              </div>
+              <label class="field">
+                <span>Album name</span>
+                <input id="album-rename" type="text" required maxLength={120} value={albumTitle} autoComplete="off"/>
+              </label>
+              <p class="form-error" id="rename-error" hidden></p>
+              <button class="btn btn-secondary" type="submit" id="rename-save">Save name</button>
+              <fieldset class="people-section">
+                <legend>People</legend>
+                <ul class="people-list" id="people-list"><li class="muted">Loading…</li></ul>
+                <div class="add-person" id="add-person" hidden>
+                  <label class="field">
+                    <span>Add someone who has an account</span>
+                    <select id="people-add-user"></select>
+                  </label>
+                  <div class="add-person-row">
+                    <select id="people-add-role" aria-label="What they can do">
+                      <option value="editor">Can add photos</option>
+                      <option value="viewer">View only</option>
+                    </select>
+                    <button class="btn btn-secondary" type="button" id="people-add">Add to album</button>
+                  </div>
+                </div>
+                <p class="form-error" id="people-error" hidden></p>
+                <p class="field-note">Someone new? Send them the invite link. They make an account in a minute.</p>
+              </fieldset>
+              <fieldset class="danger-zone">
+                <legend>Delete this album</legend>
+                <p>The album and its invite link go away for everyone. Photos stay in each person's own account.</p>
+                <label class="switch"><input id="delete-album-mine" type="checkbox"/><span>Also move my photos in it to the trash</span></label>
+                <p class="form-error" id="delete-album-error" hidden></p>
+                <button class="btn btn-danger" type="button" id="delete-album">Delete album</button>
+              </fieldset>
+            </form>
+          </dialog>
+        )}
+
+        <div id="toast" role="status" aria-live="polite" hidden></div>
 
         {props.invite && (
           <dialog id="share-dialog" aria-labelledby="share-title">
@@ -182,21 +260,14 @@ export function Gallery (props: GalleryProps) {
         {props.upload && <>
           <input type="file" id="upload-input" accept="image/*,video/*" multiple hidden/>
           <input type="file" id="folder-input" multiple hidden {...{ webkitdirectory: '' }}/>
-          <section id="upload-panel" hidden aria-live="polite">
-            <div class="upload-head">
-              <strong id="upload-title">Adding photos…</strong>
-              <span class="upload-lane" id="upload-lane">
-                {props.upload.lane === 'lan' ? 'Direct over your home Wi-Fi' : 'Over the internet'}
-              </span>
+          {/* Filled by uploader.ts */}
+          <section id="upload-panel" hidden aria-live="polite" aria-label="Adding photos"></section>
+          <div id="drop-overlay" hidden>
+            <div class="drop-card">
+              <Sticker tone="pink" tilt="left">Drop them!</Sticker>
+              <p>Let go to add your photos to {albumTitle}</p>
             </div>
-            <div class="upload-bar"><div id="upload-bar-fill"></div></div>
-            <p id="upload-hint">Keep this page open until it's finished.</p>
-            <ul id="upload-list"></ul>
-            <div class="dialog-actions">
-              <button id="upload-view" class="btn btn-primary" type="button" hidden>See them in the album</button>
-              <button id="upload-more" class="btn btn-ghost" type="button" hidden>Add more</button>
-            </div>
-          </section>
+          </div>
           <script type="application/json" id="ipp-upload" dangerouslySetInnerHTML={{ __html: jsonForInlineScript(props.upload) }}/>
           <script src="/share/static/vendor/tus.min.js"></script>
         </>}

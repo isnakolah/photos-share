@@ -1,16 +1,16 @@
 import express from 'express'
 import QRCode from 'qrcode'
-import { apiUrl, getShareByKey, invalidateShare, isKey } from '../immich'
+import { apiUrl, getShareByKey, invalidateAllShares, invalidateShare, isKey, utcBucketKey } from '../immich'
 import { renderPage } from '../view/render'
 import { AuthPage, InviteInfo, MessagePage } from '../view/auth'
 import { AlbumCard, Home } from '../view/home'
 import { log } from '../utils/log'
 import { asyncHandler } from '../http'
-import { albumLinks, rememberAlbumLink } from '../attribution/db'
-import { immichCall } from '../upload/immichAdmin'
+import { albumLinks, forgetAlbumLink, markDeleted, rememberAlbumLink } from '../attribution/db'
+import { immichCall, ImmichAuth } from '../upload/immichAdmin'
 import { clientIp } from '../upload/validate'
 import { KeyType, SharedLink } from '../types'
-import { AlbumInfo, albumForUser, albumOwner, albumPeople, GateViews, roleIn } from './access'
+import { AlbumInfo, albumForUser, albumOwner, albumPeople, forgetAlbumAccess, GateViews, roleIn } from './access'
 import {
   Account,
   COOKIE_NAME,
@@ -111,6 +111,18 @@ export const gateViews: GateViews = {
                    body="Something went wrong on our side. Try opening the link again in a minute."
                    action={{ href: '/', label: 'Go to your albums' }}/>))
   }
+}
+
+/** Map every asset in an album to the Immich user who owns it (via the timeline). */
+async function ownersOf (albumId: string, auth: ImmichAuth): Promise<Map<string, string>> {
+  const owners = new Map<string, string>()
+  const buckets = await immichCall<Array<{ timeBucket: string }>>('GET', '/timeline/buckets?albumId=' + albumId, undefined, auth)
+  for (const b of buckets) {
+    const bucket = await immichCall<{ id: string[], ownerId?: string[] }>('GET',
+      '/timeline/bucket?albumId=' + albumId + '&timeBucket=' + encodeURIComponent(utcBucketKey(b.timeBucket)), undefined, auth)
+    bucket.id.forEach((id, i) => owners.set(id, bucket.ownerId?.[i] || ''))
+  }
+  return owners
 }
 
 export function notFoundPage (res: express.Response): void {
@@ -400,6 +412,191 @@ export function accountRouter (): express.Router {
       }
       failed(res, e)
     }
+  }))
+
+  // ----- album management -------------------------------------------------------
+
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+  /**
+   * Delete photos from an album. Your own photos go to Immich's trash
+   * (restorable for 30 days). Admins and the album owner can also take other
+   * people's photos out of the album; Immich doesn't let anyone delete
+   * another user's files, so those stay in their owner's account. Everyone
+   * else can only delete what they added. Ownership is checked here, never
+   * trusted from the page.
+   */
+  api.post('/albums/:id/assets/delete', asyncHandler(async (req, res) => {
+    const account = req.account as Account
+    const albumId = req.params.id
+    const role = roleIn(await albumForUser(account, albumId), account.userId)
+    if (!role) {
+      res.status(404).json({ error: 'Album not found' })
+      return
+    }
+    const ids = Array.isArray(req.body?.ids) ? [...new Set((req.body.ids as unknown[]).map(String))].filter(id => UUID.test(id)) : []
+    if (!ids.length || ids.length > 1000) {
+      res.status(400).json({ error: 'Pick between 1 and 1000 photos' })
+      return
+    }
+    const auth = { bearer: account.token }
+    try {
+      const owners = await ownersOf(albumId, auth)
+      const trash: string[] = []
+      const remove: string[] = []
+      const refused: string[] = []
+      for (const id of ids) {
+        const owner = owners.get(id)
+        if (!owner) refused.push(id) // not in this album
+        else if (owner === account.userId) trash.push(id)
+        else if (account.isAdmin || role === 'owner') remove.push(id)
+        else refused.push(id)
+      }
+      if (trash.length) await immichCall('DELETE', '/assets', { ids: trash, force: false }, auth)
+      if (remove.length) await immichCall('DELETE', '/albums/' + albumId + '/assets', { ids: remove }, auth)
+      markDeleted([...trash, ...remove])
+      invalidateAllShares()
+      log(`${account.email} deleted from album ${albumId}: ${trash.length} trashed, ${remove.length} removed, ${refused.length} refused`)
+      res.json({ trashed: trash, removed: remove, refused })
+    } catch (e) { failed(res, e) }
+  }))
+
+  // Rename an album (owner only)
+  api.patch('/albums/:id', asyncHandler(async (req, res) => {
+    const account = req.account as Account
+    if (roleIn(await albumForUser(account, req.params.id), account.userId) !== 'owner') {
+      res.status(403).json({ error: 'Only the album owner can rename it' })
+      return
+    }
+    const name = String(req.body?.name || '').trim().slice(0, 120)
+    if (!name) {
+      res.status(400).json({ error: 'Give the album a name' })
+      return
+    }
+    try {
+      await immichCall('PATCH', '/albums/' + req.params.id, { albumName: name }, { bearer: account.token })
+      forgetAlbumAccess(account.userId, req.params.id)
+      invalidateAllShares()
+      res.json({ name })
+    } catch (e) { failed(res, e) }
+  }))
+
+  /**
+   * Delete an album (owner only). Photos stay in their owners' accounts
+   * unless `trashMine` is set, which also moves the owner's own photos in it
+   * to the trash. Friends' photos are never touched.
+   */
+  api.post('/albums/:id/delete', asyncHandler(async (req, res) => {
+    const account = req.account as Account
+    const albumId = req.params.id
+    if (roleIn(await albumForUser(account, albumId), account.userId) !== 'owner') {
+      res.status(403).json({ error: 'Only the album owner can delete it' })
+      return
+    }
+    const auth = { bearer: account.token }
+    try {
+      let trashed = 0
+      if (req.body?.trashMine === true) {
+        const mine = [...(await ownersOf(albumId, auth)).entries()].filter(([, owner]) => owner === account.userId).map(([id]) => id)
+        for (let i = 0; i < mine.length; i += 500) {
+          await immichCall('DELETE', '/assets', { ids: mine.slice(i, i + 500), force: false }, auth)
+        }
+        trashed = mine.length
+      }
+      await immichCall('DELETE', '/albums/' + albumId, undefined, auth)
+      forgetAlbumLink(albumId)
+      forgetAlbumAccess(account.userId, albumId)
+      invalidateAllShares()
+      log(`${account.email} deleted album ${albumId} (${trashed} own photos to trash)`)
+      res.json({ url: '/', trashed })
+    } catch (e) { failed(res, e) }
+  }))
+
+  // ----- album people (owner only) ------------------------------------------------
+
+  const requireOwner = async (req: express.Request, res: express.Response): Promise<Account | null> => {
+    const account = req.account as Account
+    if (roleIn(await albumForUser(account, req.params.id), account.userId) !== 'owner') {
+      res.status(403).json({ error: 'Only the album owner can manage people' })
+      return null
+    }
+    return account
+  }
+
+  // Members of the album, plus everyone else with an account who could be added
+  api.get('/albums/:id/people', asyncHandler(async (req, res) => {
+    const account = await requireOwner(req, res)
+    if (!account) return
+    try {
+      const auth = { bearer: account.token }
+      forgetAlbumAccess(account.userId, req.params.id)
+      const [album, users] = await Promise.all([
+        albumForUser(account, req.params.id),
+        immichCall<Array<{ id: string, name: string, email: string }>>('GET', '/users', undefined, auth)
+      ])
+      const members = (album?.albumUsers || []).map(u => ({ id: u.user.id, name: u.user.name, role: u.role }))
+      const memberIds = new Set(members.map(m => m.id))
+      res.json({
+        members: [...members.filter(m => m.role === 'owner'), ...members.filter(m => m.role !== 'owner')],
+        others: users.filter(u => !memberIds.has(u.id)).map(u => ({ id: u.id, name: u.name, email: u.email }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      })
+    } catch (e) { failed(res, e) }
+  }))
+
+  const ROLES = new Set(['editor', 'viewer'])
+
+  // Add someone who already has an account (no invite link needed)
+  api.post('/albums/:id/people', asyncHandler(async (req, res) => {
+    const account = await requireOwner(req, res)
+    if (!account) return
+    const userId = String(req.body?.userId || '')
+    const role = String(req.body?.role || 'editor')
+    if (!UUID.test(userId) || !ROLES.has(role)) {
+      res.status(400).json({ error: 'Pick a person and what they can do' })
+      return
+    }
+    try {
+      await immichCall('PUT', '/albums/' + req.params.id + '/users', { albumUsers: [{ userId, role }] }, { bearer: account.token })
+      forgetAlbumAccess(userId, req.params.id)
+      forgetAlbumAccess(account.userId, req.params.id)
+      log(`${account.email} added ${userId} to album ${req.params.id} as ${role}`)
+      res.json({ ok: true })
+    } catch (e) { failed(res, e) }
+  }))
+
+  // Change what someone can do: 'editor' (add photos) or 'viewer' (view only)
+  api.patch('/albums/:id/people/:userId', asyncHandler(async (req, res) => {
+    const account = await requireOwner(req, res)
+    if (!account) return
+    const role = String(req.body?.role || '')
+    if (!UUID.test(req.params.userId) || !ROLES.has(role) || req.params.userId === account.userId) {
+      res.status(400).json({ error: 'That change isn\'t possible' })
+      return
+    }
+    try {
+      await immichCall('PUT', '/albums/' + req.params.id + '/user/' + req.params.userId, { role }, { bearer: account.token })
+      forgetAlbumAccess(req.params.userId, req.params.id)
+      forgetAlbumAccess(account.userId, req.params.id)
+      res.json({ ok: true })
+    } catch (e) { failed(res, e) }
+  }))
+
+  // Remove someone from the album: they stop seeing it straight away
+  api.delete('/albums/:id/people/:userId', asyncHandler(async (req, res) => {
+    const account = await requireOwner(req, res)
+    if (!account) return
+    if (!UUID.test(req.params.userId) || req.params.userId === account.userId) {
+      res.status(400).json({ error: 'You can\'t remove yourself from your own album' })
+      return
+    }
+    try {
+      await immichCall('DELETE', '/albums/' + req.params.id + '/user/' + req.params.userId, undefined, { bearer: account.token })
+      forgetAlbumAccess(req.params.userId, req.params.id)
+      forgetAlbumAccess(account.userId, req.params.id)
+      log(`${account.email} removed ${req.params.userId} from album ${req.params.id}`)
+      res.json({ ok: true })
+    } catch (e) { failed(res, e) }
   }))
 
   router.use('/api', api)

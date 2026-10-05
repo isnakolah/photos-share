@@ -121,6 +121,34 @@ export function registerUploader (lightbox: LightboxInstance) {
   })
 }
 
+const ICON_TRASH = '<svg class="pswp__icn" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"/></svg>'
+
+/**
+ * Register the delete button, shown on photos the viewer may delete. It asks
+ * the album page (manage.ts) to confirm via an `ipp:delete-request` event.
+ */
+export function registerDeleteButton (lightbox: LightboxInstance) {
+  lightbox.on('uiRegister', () => {
+    lightbox.pswp.ui.registerElement({
+      name: 'delete-button',
+      order: 7,
+      isButton: true,
+      ariaLabel: 'Delete',
+      html: ICON_TRASH,
+      onInit: (el: HTMLElement, pswp: PswpInstance) => {
+        el.title = 'Delete'
+        const update = () => { el.hidden = !state.items[pswp.currIndex]?.deleteKind }
+        update()
+        pswp.on('change', update)
+        el.addEventListener('click', () => {
+          const item = state.items[pswp.currIndex]
+          if (item?.deleteKind) document.dispatchEvent(new CustomEvent('ipp:delete-request', { detail: { ids: [item.id] } }))
+        })
+      }
+    })
+  })
+}
+
 /**
  * Register the download button. Only called when the share allows downloads
  * AND the config enables the lightbox button.

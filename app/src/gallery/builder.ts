@@ -126,6 +126,11 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
     return {
       id: asset.id,
       uploadedBy: uploadedBy(asset),
+      // Your own photos: trash. Admins (and the album owner) can take anyone
+      // else's out of the album. Everyone else: only what they added.
+      deleteKind: account && asset.ownerId === account.userId
+        ? 'trash'
+        : account?.isAdmin || role === 'owner' ? 'remove' : undefined,
       type: asset.type,
       previewUrl,
       fullUrl,
@@ -218,7 +223,10 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
       locationWebLink: !!getConfigOption('ipp.showMetadata.location.webLink', true)
     },
     groupByDate,
-    metaBase
+    metaBase,
+    albumId: album?.id,
+    canDeleteAny: items.some(i => i.deleteKind),
+    isOwner: role === 'owner'
   }
 
   // Pages are per-person now (who's viewing, what they may do): never share

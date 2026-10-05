@@ -3,6 +3,7 @@
 // the server rendered the #ipp-upload block (the viewer can add to the album).
 
 import { createUploader, uploadsAvailable } from './uploader.js'
+import './manage.js'
 
 interface UploadConfig {
   albumId: string
@@ -103,26 +104,46 @@ function setupUpload () {
   const folderInput = $<HTMLInputElement>('folder-input')
   if (!input) return
 
-  const uploader = createUploader({
-    maxBytes: cfg.maxBytes,
-    doneTitle: (done, failed) => {
-      const noun = done === 1 ? 'photo' : 'photos'
-      return failed ? `${done} ${noun} added, ${failed} didn't make it` : `${done} ${noun} added!`
-    }
-  })
+  const albumName = document.querySelector('.album-title-xl')?.textContent || 'this album'
+  const uploader = createUploader({ maxBytes: cfg.maxBytes, albumName, lane: cfg.lane })
+  uploader.onAddMore(() => input.click())
 
   $('add-photos')?.addEventListener('click', () => input.click())
   $('add-folder')?.addEventListener('click', () => folderInput?.click())
   $('empty-album')?.addEventListener('click', () => input.click())
-  $('upload-more')?.addEventListener('click', () => input.click())
-  $('upload-view')?.addEventListener('click', () => location.reload())
 
   const MEDIA = /\.(heic|heif|dng|cr2|cr3|nef|arw|raf|orf|rw2|mov|mp4|m4v|3gp|mts)$/i
+  const keepMedia = (files: File[]) => files.filter(f => /^(image|video)\//.test(f.type) || MEDIA.test(f.name))
   for (const el of [input, folderInput]) {
     el?.addEventListener('change', () => {
       // Folder picks include everything; keep photos and videos only
-      const files = Array.from(el.files || []).filter(f => /^(image|video)\//.test(f.type) || MEDIA.test(f.name))
+      const files = keepMedia(Array.from(el.files || []))
       el.value = ''
+      if (files.length) uploader.add(files, { mode: 'member', albumId: cfg.albumId })
+    })
+  }
+
+  // Drag photos anywhere onto the page (desktop)
+  const overlay = $('drop-overlay')
+  if (overlay) {
+    let depth = 0
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files')
+    document.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e)) return
+      depth++
+      overlay.hidden = false
+    })
+    document.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1)
+      if (!depth) overlay.hidden = true
+    })
+    document.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault() })
+    document.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth = 0
+      overlay.hidden = true
+      const files = keepMedia(Array.from(e.dataTransfer?.files || []))
       if (files.length) uploader.add(files, { mode: 'member', albumId: cfg.albumId })
     })
   }

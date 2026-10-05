@@ -13,6 +13,7 @@ import {
   registerBackButton,
   registerCaption,
   registerUploader,
+  registerDeleteButton,
   registerDownloadButton,
   registerFullscreenButton,
   registerMotionButton
@@ -60,7 +61,7 @@ const upgradedSlides = new Set<number>() // indices already swapped to fullUrl
  * `src`/`width`/`height`; videos use the `html` slide with a `<video>`
  * element so PhotoSwipe streams from the server's `/share/video/...` URL.
  */
-function buildDataSource () {
+export function buildDataSource () {
   return state.items.map((item, idx) => {
     if (item.type === 'VIDEO') {
       const v = parseVideoData(item)
@@ -244,6 +245,7 @@ export function initLightbox () {
   registerMotionButton(state.lightbox)
   if (state.metadataConfig.descriptionInCaption) registerCaption(state.lightbox)
   registerUploader(state.lightbox)
+  if (state.items.some(it => it.deleteKind)) registerDeleteButton(state.lightbox)
   if (state.metadataConfig.sidebarHasContent) registerSidebar(state.lightbox)
   // Lazy album items load their exif / description / filename on open; this
   // refreshes the UI elements above once detail arrives.

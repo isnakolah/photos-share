@@ -37,8 +37,11 @@ export interface GalleryExif {
 
 export interface GalleryItem {
   id: string
-  // Display name of whoever added this asset (guest uploader, or the host)
+  // Display name of whoever added this asset
   uploadedBy?: string
+  // What the viewer may do to it: 'trash' (their own photo), 'remove' (album
+  // owner taking someone else's photo out of the album), or undefined (nothing)
+  deleteKind?: 'trash' | 'remove'
   type: 'IMAGE' | 'VIDEO'
   previewUrl: string
   fullUrl?: string
@@ -107,6 +110,8 @@ export interface MetadataConfig {
  */
 export interface InitParams {
   items?: GalleryItem[]
+  // Album the page shows, for delete requests (photos-share)
+  albumId?: string
   openItem?: number
   lightboxConfig?: LightboxConfig
   metadataConfig?: MetadataConfig
