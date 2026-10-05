@@ -16,8 +16,9 @@ import { downloadFilename } from './filename'
 import { requiresOriginal } from './sizing'
 import { displayDimensions, metadataGroupActive, pickExif } from './exif'
 import QRCode from 'qrcode'
-import { uploadersForAlbum } from '../attribution/db'
+import { uploadersForAlbum, momentoDraftFor } from '../attribution/db'
 import { maxUploadBytes, uploadsEnabled } from '../upload/server'
+import { momentoConfigured } from '../momento/client'
 import { albumOwner, albumPeople } from '../account/access'
 import type { AlbumInfo, AlbumRole } from '../account/access'
 
@@ -226,6 +227,9 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
     metaBase,
     albumId: album?.id,
     canDeleteAny: items.some(i => i.deleteKind),
+    momento: account?.isAdmin && momentoConfigured() && album
+      ? { hasDraft: !!momentoDraftFor(album.id) }
+      : undefined,
     isOwner: role === 'owner'
   }
 

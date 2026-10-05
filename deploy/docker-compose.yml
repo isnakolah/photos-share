@@ -81,6 +81,10 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-10737418240}
       UPLOAD_DB_PATH: /data/uploads.db
+      # Momento (album designer): "Open in Momento" for admins
+      MOMENTO_INTERNAL_URL: ${MOMENTO_INTERNAL_URL:-}
+      MOMENTO_SERVICE_KEY: ${MOMENTO_SERVICE_KEY:-}
+      MOMENTO_OWNER_EMAIL: ${MOMENTO_OWNER_EMAIL:-}
       UPLOAD_TMP_DIR: /data/tus
     volumes:
       # SQLite upload log + in-flight chunks: local disk

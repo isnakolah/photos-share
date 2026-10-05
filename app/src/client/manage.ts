@@ -287,5 +287,51 @@ function setupSettings () {
   })
 }
 
+// ----- Momento (admins) -------------------------------------------------------------
+
+async function openInMomento (fresh: boolean) {
+  // Open the tab right away (inside the click) so pop-up blockers allow it,
+  // then point it at the design once Momento has it ready.
+  const tab = window.open('about:blank', '_blank')
+  if (tab) {
+    tab.document.title = 'Opening in Momento…'
+    tab.document.body.style.cssText = 'font: 600 18px system-ui; display: grid; place-items: center; height: 100vh; margin: 0; color: #241A4D'
+    tab.document.body.textContent = 'Getting your album ready in Momento…'
+  }
+  toast(fresh ? 'Starting a fresh design…' : 'Opening in Momento…')
+  try {
+    const r = await api<{ url: string, existed: boolean, imported: number }>('POST', `/albums/${albumId}/momento`, { fresh })
+    if (tab) tab.location.href = r.url
+    else location.href = r.url
+    const button = $('momento-open')
+    if (button) {
+      button.dataset.hasDraft = '1'
+      const label = button.querySelector('span')
+      if (label) label.textContent = 'Open in Momento'
+    }
+    toast(r.existed
+      ? (r.imported ? `Opened your design with ${plural(r.imported, 'new photo', 'new photos')}` : 'Opened your design')
+      : `Created a design with ${plural(r.imported, 'photo', 'photos')}`)
+  } catch (e) {
+    tab?.close()
+    toast((e as Error).message)
+  }
+}
+
+function setupMomento () {
+  const button = $('momento-open')
+  const dialog = $<HTMLDialogElement>('momento-dialog')
+  if (!button) return
+  button.addEventListener('click', () => {
+    if (button.dataset.hasDraft === '1' && dialog) dialog.showModal()
+    else openInMomento(false)
+  })
+  dialog?.querySelectorAll<HTMLButtonElement>('[data-momento-fresh]').forEach(b => b.addEventListener('click', () => {
+    dialog.close()
+    openInMomento(b.dataset.momentoFresh === '1')
+  }))
+}
+
 setupDelete()
 setupSettings()
+setupMomento()

@@ -47,6 +47,8 @@ export interface GalleryProps {
   // Viewer can delete at least one photo here / owns the album
   canDeleteAny?: boolean
   isOwner?: boolean
+  // Admins: open this album as a Momento album design
+  momento?: { hasDraft: boolean }
 }
 
 const Icon = {
@@ -58,6 +60,7 @@ const Icon = {
   select: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z"/></svg>,
   trash: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"/></svg>,
   settings: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"/></svg>,
+  book: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19,2L14,6.5V17.5L19,13V2M6.5,5C4.55,5 2.45,5.4 1,6.5V21.16C1,21.41 1.25,21.66 1.5,21.66C1.6,21.66 1.65,21.59 1.75,21.59C3.1,20.94 5.05,20.5 6.5,20.5C8.45,20.5 10.55,20.9 12,22C13.35,21.15 15.8,20.5 17.5,20.5C19.15,20.5 20.85,20.81 22.25,21.56C22.35,21.61 22.4,21.59 22.5,21.59C22.75,21.59 23,21.34 23,21.09V6.5C22.4,6.05 21.75,5.75 21,5.5V19C19.9,18.65 18.7,18.5 17.5,18.5C15.8,18.5 13.35,19.15 12,20V6.5C10.55,5.4 8.45,5 6.5,5Z"/></svg>,
   close: <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>
 }
 
@@ -119,6 +122,12 @@ export function Gallery (props: GalleryProps) {
               <a id="download-zip" class="btn btn-ghost" href={props.path + '/download'} title="Download every photo as one ZIP file">
                 {Icon.download}<span>Download all</span>
               </a>
+            )}
+            {props.momento && (
+              <button id="momento-open" class="btn btn-ghost" type="button" data-has-draft={props.momento.hasDraft ? '1' : ''}
+                      title="Design a printable album from these photos in Momento">
+                {Icon.book}<span>{props.momento.hasDraft ? 'Open in Momento' : 'Design in Momento'}</span>
+              </button>
             )}
             {props.isOwner && (
               <button id="album-settings-open" class="btn btn-ghost btn-icon-only" type="button" aria-label="Album settings" title="Album settings">{Icon.settings}</button>
@@ -219,6 +228,22 @@ export function Gallery (props: GalleryProps) {
                 <p class="form-error" id="delete-album-error" hidden></p>
                 <button class="btn btn-danger" type="button" id="delete-album">Delete album</button>
               </fieldset>
+            </form>
+          </dialog>
+        )}
+
+        {props.momento && (
+          <dialog id="momento-dialog" aria-labelledby="momento-title">
+            <form method="dialog">
+              <div class="dialog-head">
+                <h2 id="momento-title">Open in Momento</h2>
+                <button class="icon-btn" type="button" data-close aria-label="Close">{Icon.close}</button>
+              </div>
+              <p class="dialog-sub">You already have a design for this album. New photos added here are brought in when you open it; your pages stay as they are.</p>
+              <div class="dialog-actions">
+                <button class="btn btn-primary" type="button" data-momento-fresh="0">Open my design</button>
+                <button class="btn btn-ghost" type="button" data-momento-fresh="1">Start a fresh design</button>
+              </div>
             </form>
           </dialog>
         )}

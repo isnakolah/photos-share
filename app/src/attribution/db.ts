@@ -100,6 +100,14 @@ export function openDb (file = process.env.UPLOAD_DB_PATH || '/data/uploads.db')
       slug TEXT,
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
+    -- Momento album designs opened from albums here (Open in Momento).
+    -- Momento is the source of truth; this only remembers the last one.
+    CREATE TABLE IF NOT EXISTS momento_drafts (
+      album_id TEXT PRIMARY KEY,
+      draft_id TEXT NOT NULL,
+      workspace_url TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
     -- Legacy (pre-accounts) owner sessions; unused.
     CREATE TABLE IF NOT EXISTS owner_sessions (
       sid_hash TEXT PRIMARY KEY,
@@ -260,4 +268,18 @@ export function albumLinks (albumIds: string[]): Map<string, { shareKey: string,
 
 export function forgetAlbumLink (albumId: string): void {
   openDb().prepare('DELETE FROM album_links WHERE album_id = ?').run(albumId)
+}
+
+export function rememberMomentoDraft (albumId: string, draftId: string, workspaceUrl: string): void {
+  openDb().prepare(`
+    INSERT INTO momento_drafts (album_id, draft_id, workspace_url) VALUES (?, ?, ?)
+    ON CONFLICT (album_id) DO UPDATE SET draft_id = excluded.draft_id, workspace_url = excluded.workspace_url,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).run(albumId, draftId, workspaceUrl)
+}
+
+export function momentoDraftFor (albumId: string): { draftId: string, workspaceUrl: string } | undefined {
+  const row = openDb().prepare('SELECT draft_id, workspace_url FROM momento_drafts WHERE album_id = ?')
+    .get(albumId) as { draft_id: string, workspace_url: string } | undefined
+  return row ? { draftId: row.draft_id, workspaceUrl: row.workspace_url } : undefined
 }
